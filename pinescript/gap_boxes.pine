@@ -1,0 +1,195 @@
+//@version=5
+// Opening Gap Boxes (Support / Resistance)
+//
+// A gap up leaves an unfilled zone between the prior close and today's open;
+// a gap down leaves one between today's open and the prior close. Whatever
+// part of that zone price does not trade through by the close of the gap
+// day becomes a box, extended to the right. On later days the box shrinks
+// toward whichever close lands inside it, turns solid (confirmed) the first
+// time price enters and then closes back out on the favorable side, and is
+// deleted the day price closes all the way through it.
+//
+// Screener use: the two data-window plots below are 1 when the symbol's
+// current close sits inside a CONFIRMED support/resistance box and 0
+// otherwise. In Pine Screener, add this script and filter the corresponding
+// column to "is true" (or "= 1") to scan for symbols currently inside a
+// green support box or a red resistance box.
+indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
+
+extendRight = input.bool(true, "Extend boxes to the right")
+
+colSupportUnfilled     = input.color(color.new(color.lime, 75), "Support gap - untested", group = "Colors")
+colSupportConfirmed    = input.color(color.new(color.lime, 15), "Support gap - confirmed", group = "Colors")
+colResistanceUnfilled  = input.color(color.new(color.red, 75), "Resistance gap - untested", group = "Colors")
+colResistanceConfirmed = input.color(color.new(color.red, 15), "Resistance gap - confirmed", group = "Colors")
+
+maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
+
+var box[]    supportBoxes     = array.new_box()
+var float[]  supportTop       = array.new_float()
+var float[]  supportBottom    = array.new_float()
+var bool[]   supportConfirmed = array.new_bool()
+var int[]    supportBirth     = array.new_int()
+
+var box[]    resBoxes     = array.new_box()
+var float[]  resTop       = array.new_float()
+var float[]  resBottom    = array.new_float()
+var bool[]   resConfirmed = array.new_bool()
+var int[]    resBirth     = array.new_int()
+
+var box    pendingBox  = na
+var int    pendingBar  = na
+var string pendingSide = na
+
+enteredSupport         = false
+enteredResistance      = false
+filledThroughSupport   = false
+filledThroughResistance = false
+
+// ---- test/shrink/confirm/eliminate boxes created on earlier bars ----
+if array.size(supportBoxes) > 0
+    for i = array.size(supportBoxes) - 1 to 0
+        if array.get(supportBirth, i) != bar_index // a box isn't testable until the day after it forms
+            top = array.get(supportTop, i)
+            bot = array.get(supportBottom, i)
+            bx  = array.get(supportBoxes, i)
+            if low <= top
+                enteredSupport := true
+                if close > top
+                    if not array.get(supportConfirmed, i)
+                        array.set(supportConfirmed, i, true)
+                        box.set_bgcolor(bx, colSupportConfirmed)
+                        box.set_border_color(bx, color.green)
+                else if close < bot
+                    filledThroughSupport := true
+                    box.delete(bx)
+                    array.remove(supportBoxes, i)
+                    array.remove(supportTop, i)
+                    array.remove(supportBottom, i)
+                    array.remove(supportConfirmed, i)
+                    array.remove(supportBirth, i)
+                else
+                    array.set(supportTop, i, close)
+                    box.set_top(bx, close)
+
+if array.size(resBoxes) > 0
+    for i = array.size(resBoxes) - 1 to 0
+        if array.get(resBirth, i) != bar_index
+            top = array.get(resTop, i)
+            bot = array.get(resBottom, i)
+            bx  = array.get(resBoxes, i)
+            if high >= bot
+                enteredResistance := true
+                if close < bot
+                    if not array.get(resConfirmed, i)
+                        array.set(resConfirmed, i, true)
+                        box.set_bgcolor(bx, colResistanceConfirmed)
+                        box.set_border_color(bx, color.red)
+                else if close > top
+                    filledThroughResistance := true
+                    box.delete(bx)
+                    array.remove(resBoxes, i)
+                    array.remove(resTop, i)
+                    array.remove(resBottom, i)
+                    array.remove(resConfirmed, i)
+                    array.remove(resBirth, i)
+                else
+                    array.set(resBottom, i, close)
+                    box.set_bottom(bx, close)
+
+// ---- bound memory so tracked boxes never outrun the indicator's own box cap ----
+if array.size(supportBoxes) > maxTrackedBoxes
+    box.delete(array.get(supportBoxes, 0))
+    array.remove(supportBoxes, 0)
+    array.remove(supportTop, 0)
+    array.remove(supportBottom, 0)
+    array.remove(supportConfirmed, 0)
+    array.remove(supportBirth, 0)
+
+if array.size(resBoxes) > maxTrackedBoxes
+    box.delete(array.get(resBoxes, 0))
+    array.remove(resBoxes, 0)
+    array.remove(resTop, 0)
+    array.remove(resBottom, 0)
+    array.remove(resConfirmed, 0)
+    array.remove(resBirth, 0)
+
+// ---- classify a new gap once per bar, then live-update/create/drop today's box every tick ----
+isNewBar = na(pendingBar) or bar_index != pendingBar
+if isNewBar
+    pendingBar := bar_index
+    pendingBox := na
+    pendingSide := na
+    if open > close[1]
+        pendingSide := "support"
+    else if open < close[1]
+        pendingSide := "resistance"
+
+if pendingSide == "support"
+    prevClose = close[1]
+    topCandidate = math.min(open, low)
+    if topCandidate > prevClose
+        if na(pendingBox)
+            pendingBox := box.new(bar_index, topCandidate, bar_index, prevClose, border_color = color.green, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+            array.push(supportBoxes, pendingBox)
+            array.push(supportTop, topCandidate)
+            array.push(supportBottom, prevClose)
+            array.push(supportConfirmed, false)
+            array.push(supportBirth, bar_index)
+        else
+            box.set_top(pendingBox, topCandidate)
+            array.set(supportTop, array.size(supportTop) - 1, topCandidate)
+    else if not na(pendingBox) // price traded all the way back through the gap on day one
+        box.delete(pendingBox)
+        array.pop(supportBoxes)
+        array.pop(supportTop)
+        array.pop(supportBottom)
+        array.pop(supportConfirmed)
+        array.pop(supportBirth)
+        pendingBox := na
+
+if pendingSide == "resistance"
+    prevClose = close[1]
+    bottomCandidate = math.max(open, high)
+    if bottomCandidate < prevClose
+        if na(pendingBox)
+            pendingBox := box.new(bar_index, prevClose, bar_index, bottomCandidate, border_color = color.red, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+            array.push(resBoxes, pendingBox)
+            array.push(resTop, prevClose)
+            array.push(resBottom, bottomCandidate)
+            array.push(resConfirmed, false)
+            array.push(resBirth, bar_index)
+        else
+            box.set_bottom(pendingBox, bottomCandidate)
+            array.set(resBottom, array.size(resBottom) - 1, bottomCandidate)
+    else if not na(pendingBox)
+        box.delete(pendingBox)
+        array.pop(resBoxes)
+        array.pop(resTop)
+        array.pop(resBottom)
+        array.pop(resConfirmed)
+        array.pop(resBirth)
+        pendingBox := na
+
+// ---- Pine Screener booleans: is the current close inside a CONFIRMED (colored) box? ----
+insideSupportGap = false
+if array.size(supportBoxes) > 0
+    for i = 0 to array.size(supportBoxes) - 1
+        if array.get(supportConfirmed, i) and close >= array.get(supportBottom, i) and close <= array.get(supportTop, i)
+            insideSupportGap := true
+
+insideResistanceGap = false
+if array.size(resBoxes) > 0
+    for i = 0 to array.size(resBoxes) - 1
+        if array.get(resConfirmed, i) and close >= array.get(resBottom, i) and close <= array.get(resTop, i)
+            insideResistanceGap := true
+
+plot(insideSupportGap ? 1 : 0, title = "Inside Support Gap (Green Box)", display = display.data_window)
+plot(insideResistanceGap ? 1 : 0, title = "Inside Resistance Gap (Red Box)", display = display.data_window)
+
+alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
+alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
+alertcondition(enteredResistance, title = "Price entered resistance gap (red box)", message = "{{ticker}}: price entered a resistance gap box")
+alertcondition(filledThroughSupport or filledThroughResistance, title = "Price moved through an entire gap box", message = "{{ticker}}: price closed completely through a gap box")
+alertcondition(filledThroughSupport, title = "Support gap box fully filled", message = "{{ticker}}: price closed below its support gap box")
+alertcondition(filledThroughResistance, title = "Resistance gap box fully filled", message = "{{ticker}}: price closed above its resistance gap box")
