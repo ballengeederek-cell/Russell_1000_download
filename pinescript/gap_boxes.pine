@@ -15,7 +15,7 @@
 // "is true" (or "= 1"). "Inside Support/Resistance Gap" fires when the
 // symbol's close sits inside a CONFIRMED green/red box; "Open Above 50 SMA"
 // fires when today's open is above the 50-period SMA; "Within 5% of 50 SMA"
-// fires when close is within +/-5% of its 50-period SMA.
+// fires when the current price is within +/-5% of its 50-period SMA.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -188,12 +188,13 @@ if array.size(resBoxes) > 0
 
 sma50 = ta.sma(close, 50)
 openAboveSma50 = open > sma50
-withinSma50Band = math.abs(close - sma50) / sma50 <= 0.05
+currentPrice = close // close is the live, continuously-updating price on the forming bar
+priceWithinSma50Band = math.abs(currentPrice - sma50) / sma50 <= 0.05
 
 plot(insideSupportGap ? 1 : 0, title = "Inside Support Gap (Green Box)", display = display.data_window)
 plot(insideResistanceGap ? 1 : 0, title = "Inside Resistance Gap (Red Box)", display = display.data_window)
 plot(openAboveSma50 ? 1 : 0, title = "Open Above 50 SMA", display = display.data_window)
-plot(withinSma50Band ? 1 : 0, title = "Within 5% of 50 SMA", display = display.data_window)
+plot(priceWithinSma50Band ? 1 : 0, title = "Within 5% of 50 SMA", display = display.data_window)
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
