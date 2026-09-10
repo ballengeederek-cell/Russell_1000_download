@@ -5,11 +5,15 @@
 // a gap down leaves one between today's open and the prior close. Whatever
 // part of that zone price does not trade through by the close of the gap
 // day becomes a box, left edge anchored one candle back at the pre-gap bar
-// (where the gap was created) and extended to the right. On any later day
-// price touches the box, it turns solid (confirmed) - whether that day's
-// close ends back outside the box or just lands inside it, in which case
-// the box also shrinks to be even with that close. It is deleted the day
-// price closes all the way through it.
+// (where the gap was created) and extended to the right. Every box update
+// - forming the gap day's box, confirming, shrinking, or deleting it on a
+// later day - happens only once, at that bar's close (barstate.isconfirmed),
+// using the day's final OHLC. A box never changes shape or color mid-day
+// while price is still moving; it only ever updates at market close. On
+// any later day price touches a box, it turns solid (confirmed) - whether
+// that day's close ends back outside the box or just lands inside it, in
+// which case the box also shrinks to be even with that close. It is
+// deleted the day price closes all the way through it.
 //
 // Screener use: each "Screener: ..." alertcondition() below shows up in
 // Pine Screener with its own True toggle - just add this script and switch
@@ -34,27 +38,25 @@ var box[]    supportBoxes     = array.new_box()
 var float[]  supportTop       = array.new_float()
 var float[]  supportBottom    = array.new_float()
 var bool[]   supportConfirmed = array.new_bool()
-var int[]    supportBirth     = array.new_int()
 
 var box[]    resBoxes     = array.new_box()
 var float[]  resTop       = array.new_float()
 var float[]  resBottom    = array.new_float()
 var bool[]   resConfirmed = array.new_bool()
-var int[]    resBirth     = array.new_int()
-
-var box    pendingBox  = na
-var int    pendingBar  = na
-var string pendingSide = na
 
 enteredSupport         = false
 enteredResistance      = false
 filledThroughSupport   = false
 filledThroughResistance = false
 
-// ---- test/shrink/confirm/eliminate boxes created on earlier bars ----
-if array.size(supportBoxes) > 0
-    for i = array.size(supportBoxes) - 1 to 0
-        if array.get(supportBirth, i) != bar_index // a box isn't testable until the day after it forms
+// Every box mutation below runs only once per bar, at that bar's close,
+// using the day's final OHLC - never mid-bar while price is still moving.
+if barstate.isconfirmed
+    // ---- test/shrink/confirm/eliminate boxes created on earlier bars ----
+    // (today's box, if any, is appended further down - after this loop -
+    // so it can never be tested on the same bar it forms)
+    if array.size(supportBoxes) > 0
+        for i = array.size(supportBoxes) - 1 to 0
             top = array.get(supportTop, i)
             bot = array.get(supportBottom, i)
             bx  = array.get(supportBoxes, i)
@@ -67,7 +69,6 @@ if array.size(supportBoxes) > 0
                     array.remove(supportTop, i)
                     array.remove(supportBottom, i)
                     array.remove(supportConfirmed, i)
-                    array.remove(supportBirth, i)
                 else
                     // any touch that doesn't close all the way through confirms the box,
                     // whether price closes back above it or just inside it
@@ -79,9 +80,8 @@ if array.size(supportBoxes) > 0
                         array.set(supportTop, i, close)
                         box.set_top(bx, close)
 
-if array.size(resBoxes) > 0
-    for i = array.size(resBoxes) - 1 to 0
-        if array.get(resBirth, i) != bar_index
+    if array.size(resBoxes) > 0
+        for i = array.size(resBoxes) - 1 to 0
             top = array.get(resTop, i)
             bot = array.get(resBottom, i)
             bx  = array.get(resBoxes, i)
@@ -94,7 +94,6 @@ if array.size(resBoxes) > 0
                     array.remove(resTop, i)
                     array.remove(resBottom, i)
                     array.remove(resConfirmed, i)
-                    array.remove(resBirth, i)
                 else
                     // any touch that doesn't close all the way through confirms the box,
                     // whether price closes back below it or just inside it
@@ -106,79 +105,40 @@ if array.size(resBoxes) > 0
                         array.set(resBottom, i, close)
                         box.set_bottom(bx, close)
 
-// ---- bound memory so tracked boxes never outrun the indicator's own box cap ----
-if array.size(supportBoxes) > maxTrackedBoxes
-    box.delete(array.get(supportBoxes, 0))
-    array.remove(supportBoxes, 0)
-    array.remove(supportTop, 0)
-    array.remove(supportBottom, 0)
-    array.remove(supportConfirmed, 0)
-    array.remove(supportBirth, 0)
+    // ---- bound memory so tracked boxes never outrun the indicator's own box cap ----
+    if array.size(supportBoxes) > maxTrackedBoxes
+        box.delete(array.get(supportBoxes, 0))
+        array.remove(supportBoxes, 0)
+        array.remove(supportTop, 0)
+        array.remove(supportBottom, 0)
+        array.remove(supportConfirmed, 0)
 
-if array.size(resBoxes) > maxTrackedBoxes
-    box.delete(array.get(resBoxes, 0))
-    array.remove(resBoxes, 0)
-    array.remove(resTop, 0)
-    array.remove(resBottom, 0)
-    array.remove(resConfirmed, 0)
-    array.remove(resBirth, 0)
+    if array.size(resBoxes) > maxTrackedBoxes
+        box.delete(array.get(resBoxes, 0))
+        array.remove(resBoxes, 0)
+        array.remove(resTop, 0)
+        array.remove(resBottom, 0)
+        array.remove(resConfirmed, 0)
 
-// ---- classify a new gap once per bar, then live-update/create/drop today's box every tick ----
-isNewBar = na(pendingBar) or bar_index != pendingBar
-if isNewBar
-    pendingBar := bar_index
-    pendingBox := na
-    pendingSide := na
-    if open > close[1]
-        pendingSide := "support"
-    else if open < close[1]
-        pendingSide := "resistance"
-
-if pendingSide == "support"
+    // ---- form today's gap box in one shot, sized to the full day's range ----
     prevClose = close[1]
-    topCandidate = math.min(open, low)
-    if topCandidate > prevClose
-        if na(pendingBox)
-            pendingBox := box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
-            array.push(supportBoxes, pendingBox)
+    if open > prevClose
+        topCandidate = math.min(open, low)
+        if topCandidate > prevClose
+            newBox = box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+            array.push(supportBoxes, newBox)
             array.push(supportTop, topCandidate)
             array.push(supportBottom, prevClose)
             array.push(supportConfirmed, false)
-            array.push(supportBirth, bar_index)
-        else
-            box.set_top(pendingBox, topCandidate)
-            array.set(supportTop, array.size(supportTop) - 1, topCandidate)
-    else if not na(pendingBox) // price traded all the way back through the gap on day one
-        box.delete(pendingBox)
-        array.pop(supportBoxes)
-        array.pop(supportTop)
-        array.pop(supportBottom)
-        array.pop(supportConfirmed)
-        array.pop(supportBirth)
-        pendingBox := na
-
-if pendingSide == "resistance"
-    prevClose = close[1]
-    bottomCandidate = math.max(open, high)
-    if bottomCandidate < prevClose
-        if na(pendingBox)
-            pendingBox := box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
-            array.push(resBoxes, pendingBox)
+        // else: price traded all the way back through the gap by the close - no box
+    else if open < prevClose
+        bottomCandidate = math.max(open, high)
+        if bottomCandidate < prevClose
+            newBox = box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+            array.push(resBoxes, newBox)
             array.push(resTop, prevClose)
             array.push(resBottom, bottomCandidate)
             array.push(resConfirmed, false)
-            array.push(resBirth, bar_index)
-        else
-            box.set_bottom(pendingBox, bottomCandidate)
-            array.set(resBottom, array.size(resBottom) - 1, bottomCandidate)
-    else if not na(pendingBox)
-        box.delete(pendingBox)
-        array.pop(resBoxes)
-        array.pop(resTop)
-        array.pop(resBottom)
-        array.pop(resConfirmed)
-        array.pop(resBirth)
-        pendingBox := na
 
 // ---- Pine Screener booleans: is the current close inside a CONFIRMED (colored) box? ----
 insideSupportGap = false
