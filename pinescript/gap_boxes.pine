@@ -10,11 +10,11 @@
 // (confirmed) the first time price enters and then closes back out on the
 // favorable side, and is deleted the day price closes all the way through it.
 //
-// Screener use: the data-window plots below are 1 when true, 0 otherwise -
-// in Pine Screener, add this script and filter the corresponding column to
-// "is true" (or "= 1"). "Inside Support/Resistance Gap" fires when the
-// symbol's close sits inside a CONFIRMED green/red box; "Open Above 50 SMA"
-// and "Open Below 50 SMA" fire when today's open is above/below the
+// Screener use: each "Screener: ..." alertcondition() below shows up in
+// Pine Screener with its own True toggle - just add this script and switch
+// the column on, no manual "= 1" filter setup needed. "Inside Support/
+// Resistance Gap" fires when the symbol's close sits inside a CONFIRMED
+// green/red box; "Open Above/Below 50 SMA" fires on today's open vs. the
 // 50-period SMA; "Within 5% of 50 SMA" fires when the current price is
 // within +/-5% of its 50-period SMA.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
@@ -193,11 +193,14 @@ openBelowSma50 = open < sma50
 currentPrice = close // close is the live, continuously-updating price on the forming bar
 priceWithinSma50Band = math.abs(currentPrice - sma50) / sma50 <= 0.05
 
-plot(insideSupportGap ? 1 : 0, title = "Inside Support Gap (Green Box)", display = display.data_window)
-plot(insideResistanceGap ? 1 : 0, title = "Inside Resistance Gap (Red Box)", display = display.data_window)
-plot(openAboveSma50 ? 1 : 0, title = "Open Above 50 SMA", display = display.data_window)
-plot(openBelowSma50 ? 1 : 0, title = "Open Below 50 SMA", display = display.data_window)
-plot(priceWithinSma50Band ? 1 : 0, title = "Within 5% of 50 SMA", display = display.data_window)
+// alertcondition() takes the boolean directly, so Pine Screener shows a
+// native "True" toggle for each of these - no plot cast or manual "= 1"
+// filter setup needed.
+alertcondition(insideSupportGap, title = "Screener: Inside Support Gap (Green Box)", message = "{{ticker}}: inside a confirmed support gap box")
+alertcondition(insideResistanceGap, title = "Screener: Inside Resistance Gap (Red Box)", message = "{{ticker}}: inside a confirmed resistance gap box")
+alertcondition(openAboveSma50, title = "Screener: Open Above 50 SMA", message = "{{ticker}}: open above the 50 SMA")
+alertcondition(openBelowSma50, title = "Screener: Open Below 50 SMA", message = "{{ticker}}: open below the 50 SMA")
+alertcondition(priceWithinSma50Band, title = "Screener: Within 5% of 50 SMA", message = "{{ticker}}: price within 5% of the 50 SMA")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
