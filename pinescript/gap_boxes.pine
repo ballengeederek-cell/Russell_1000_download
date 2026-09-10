@@ -4,16 +4,17 @@
 // A gap up leaves an unfilled zone between the prior close and today's open;
 // a gap down leaves one between today's open and the prior close. Whatever
 // part of that zone price does not trade through by the close of the gap
-// day becomes a box, extended to the right. On later days the box shrinks
-// toward whichever close lands inside it, turns solid (confirmed) the first
-// time price enters and then closes back out on the favorable side, and is
-// deleted the day price closes all the way through it.
+// day becomes a box, left edge anchored one candle back at the pre-gap bar
+// (where the gap was created) and extended to the right. On later days the
+// box shrinks toward whichever close lands inside it, turns solid
+// (confirmed) the first time price enters and then closes back out on the
+// favorable side, and is deleted the day price closes all the way through it.
 //
-// Screener use: the two data-window plots below are 1 when the symbol's
-// current close sits inside a CONFIRMED support/resistance box and 0
-// otherwise. In Pine Screener, add this script and filter the corresponding
-// column to "is true" (or "= 1") to scan for symbols currently inside a
-// green support box or a red resistance box.
+// Screener use: the data-window plots below are 1 when true, 0 otherwise -
+// in Pine Screener, add this script and filter the corresponding column to
+// "is true" (or "= 1"). "Inside Support/Resistance Gap" fires when the
+// symbol's close sits inside a CONFIRMED green/red box; "Within 5% of 50
+// SMA" fires when close is within +/-5% of its 50-period SMA.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -130,7 +131,7 @@ if pendingSide == "support"
     topCandidate = math.min(open, low)
     if topCandidate > prevClose
         if na(pendingBox)
-            pendingBox := box.new(bar_index, topCandidate, bar_index, prevClose, border_color = color.green, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.green, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
             array.push(supportBoxes, pendingBox)
             array.push(supportTop, topCandidate)
             array.push(supportBottom, prevClose)
@@ -153,7 +154,7 @@ if pendingSide == "resistance"
     bottomCandidate = math.max(open, high)
     if bottomCandidate < prevClose
         if na(pendingBox)
-            pendingBox := box.new(bar_index, prevClose, bar_index, bottomCandidate, border_color = color.red, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.red, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
             array.push(resBoxes, pendingBox)
             array.push(resTop, prevClose)
             array.push(resBottom, bottomCandidate)
@@ -184,8 +185,12 @@ if array.size(resBoxes) > 0
         if array.get(resConfirmed, i) and close >= array.get(resBottom, i) and close <= array.get(resTop, i)
             insideResistanceGap := true
 
+sma50 = ta.sma(close, 50)
+withinSma50Band = math.abs(close - sma50) / sma50 <= 0.05
+
 plot(insideSupportGap ? 1 : 0, title = "Inside Support Gap (Green Box)", display = display.data_window)
 plot(insideResistanceGap ? 1 : 0, title = "Inside Resistance Gap (Red Box)", display = display.data_window)
+plot(withinSma50Band ? 1 : 0, title = "Within 5% of 50 SMA", display = display.data_window)
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
