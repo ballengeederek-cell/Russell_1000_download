@@ -132,7 +132,7 @@ if pendingSide == "support"
     topCandidate = math.min(open, low)
     if topCandidate > prevClose
         if na(pendingBox)
-            pendingBox := box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.green, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
             array.push(supportBoxes, pendingBox)
             array.push(supportTop, topCandidate)
             array.push(supportBottom, prevClose)
@@ -155,7 +155,7 @@ if pendingSide == "resistance"
     bottomCandidate = math.max(open, high)
     if bottomCandidate < prevClose
         if na(pendingBox)
-            pendingBox := box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.red, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
             array.push(resBoxes, pendingBox)
             array.push(resTop, prevClose)
             array.push(resBottom, bottomCandidate)
