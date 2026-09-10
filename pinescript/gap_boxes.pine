@@ -22,10 +22,10 @@ indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", ove
 
 extendRight = input.bool(true, "Extend boxes to the right")
 
-colSupportUnfilled     = input.color(color.new(color.lime, 75), "Support gap - untested", group = "Colors")
-colSupportConfirmed    = input.color(color.new(color.lime, 15), "Support gap - confirmed", group = "Colors")
-colResistanceUnfilled  = input.color(color.new(color.red, 75), "Resistance gap - untested", group = "Colors")
-colResistanceConfirmed = input.color(color.new(color.red, 15), "Resistance gap - confirmed", group = "Colors")
+colSupportUnfilled     = input.color(color.new(color.gray, 75), "Support gap - untested", group = "Colors")
+colSupportConfirmed    = input.color(color.new(color.lime, 75), "Support gap - confirmed", group = "Colors")
+colResistanceUnfilled  = input.color(color.new(color.gray, 75), "Resistance gap - untested", group = "Colors")
+colResistanceConfirmed = input.color(color.new(color.red, 75), "Resistance gap - confirmed", group = "Colors")
 
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
