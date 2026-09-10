@@ -5,10 +5,11 @@
 // a gap down leaves one between today's open and the prior close. Whatever
 // part of that zone price does not trade through by the close of the gap
 // day becomes a box, left edge anchored one candle back at the pre-gap bar
-// (where the gap was created) and extended to the right. On later days the
-// box shrinks toward whichever close lands inside it, turns solid
-// (confirmed) the first time price enters and then closes back out on the
-// favorable side, and is deleted the day price closes all the way through it.
+// (where the gap was created) and extended to the right. On any later day
+// price touches the box, it turns solid (confirmed) - whether that day's
+// close ends back outside the box or just lands inside it, in which case
+// the box also shrinks to be even with that close. It is deleted the day
+// price closes all the way through it.
 //
 // Screener use: each "Screener: ..." alertcondition() below shows up in
 // Pine Screener with its own True toggle - just add this script and switch
@@ -59,12 +60,7 @@ if array.size(supportBoxes) > 0
             bx  = array.get(supportBoxes, i)
             if low <= top
                 enteredSupport := true
-                if close > top
-                    if not array.get(supportConfirmed, i)
-                        array.set(supportConfirmed, i, true)
-                        box.set_bgcolor(bx, colSupportConfirmed)
-                        box.set_border_color(bx, color.green)
-                else if close < bot
+                if close < bot
                     filledThroughSupport := true
                     box.delete(bx)
                     array.remove(supportBoxes, i)
@@ -73,8 +69,15 @@ if array.size(supportBoxes) > 0
                     array.remove(supportConfirmed, i)
                     array.remove(supportBirth, i)
                 else
-                    array.set(supportTop, i, close)
-                    box.set_top(bx, close)
+                    // any touch that doesn't close all the way through confirms the box,
+                    // whether price closes back above it or just inside it
+                    if not array.get(supportConfirmed, i)
+                        array.set(supportConfirmed, i, true)
+                        box.set_bgcolor(bx, colSupportConfirmed)
+                        box.set_border_color(bx, color.green)
+                    if close < top
+                        array.set(supportTop, i, close)
+                        box.set_top(bx, close)
 
 if array.size(resBoxes) > 0
     for i = array.size(resBoxes) - 1 to 0
@@ -84,12 +87,7 @@ if array.size(resBoxes) > 0
             bx  = array.get(resBoxes, i)
             if high >= bot
                 enteredResistance := true
-                if close < bot
-                    if not array.get(resConfirmed, i)
-                        array.set(resConfirmed, i, true)
-                        box.set_bgcolor(bx, colResistanceConfirmed)
-                        box.set_border_color(bx, color.red)
-                else if close > top
+                if close > top
                     filledThroughResistance := true
                     box.delete(bx)
                     array.remove(resBoxes, i)
@@ -98,8 +96,15 @@ if array.size(resBoxes) > 0
                     array.remove(resConfirmed, i)
                     array.remove(resBirth, i)
                 else
-                    array.set(resBottom, i, close)
-                    box.set_bottom(bx, close)
+                    // any touch that doesn't close all the way through confirms the box,
+                    // whether price closes back below it or just inside it
+                    if not array.get(resConfirmed, i)
+                        array.set(resConfirmed, i, true)
+                        box.set_bgcolor(bx, colResistanceConfirmed)
+                        box.set_border_color(bx, color.red)
+                    if close > bot
+                        array.set(resBottom, i, close)
+                        box.set_bottom(bx, close)
 
 // ---- bound memory so tracked boxes never outrun the indicator's own box cap ----
 if array.size(supportBoxes) > maxTrackedBoxes
