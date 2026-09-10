@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 // Opening Gap Boxes (Support / Resistance)
 //
 // A gap up leaves an unfilled zone between the prior close and today's open;
@@ -14,10 +14,10 @@
 // Pine Screener with its own True toggle - just add this script and switch
 // the column on, no manual "= 1" filter setup needed. "Inside Support/
 // Resistance Gap" fires when the symbol's close sits inside a CONFIRMED
-// green/red box; "Open Above/Below 50 SMA" fires on today's open vs. the
-// 50-period SMA; "Within 5% of 50 SMA" fires when the current price is
-// within +/-5% of its 50-period SMA; "Price Crossed 50 SMA" fires on the
-// bar price crosses the 50 SMA in either direction.
+// green/red box. For the 20/50/200 SMAs: "Open Above/Below <N> SMA" fires
+// on today's open vs. that SMA; "Within 5% of <N> SMA" fires when the
+// current price is within +/-5% of it; "Price Crossed <N> SMA" fires on
+// the bar price crosses it in either direction.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -188,22 +188,46 @@ if array.size(resBoxes) > 0
         if array.get(resConfirmed, i) and close >= array.get(resBottom, i) and close <= array.get(resTop, i)
             insideResistanceGap := true
 
+currentPrice = close // close is the live, continuously-updating price on the forming bar
+
+sma20 = ta.sma(close, 20)
+openAboveSma20 = open > sma20
+openBelowSma20 = open < sma20
+priceWithinSma20Band = math.abs(currentPrice - sma20) / sma20 <= 0.05
+crossedSma20 = ta.cross(currentPrice, sma20)
+
 sma50 = ta.sma(close, 50)
 openAboveSma50 = open > sma50
 openBelowSma50 = open < sma50
-currentPrice = close // close is the live, continuously-updating price on the forming bar
 priceWithinSma50Band = math.abs(currentPrice - sma50) / sma50 <= 0.05
 crossedSma50 = ta.cross(currentPrice, sma50)
+
+sma200 = ta.sma(close, 200)
+openAboveSma200 = open > sma200
+openBelowSma200 = open < sma200
+priceWithinSma200Band = math.abs(currentPrice - sma200) / sma200 <= 0.05
+crossedSma200 = ta.cross(currentPrice, sma200)
 
 // alertcondition() takes the boolean directly, so Pine Screener shows a
 // native "True" toggle for each of these - no plot cast or manual "= 1"
 // filter setup needed.
 alertcondition(insideSupportGap, title = "Screener: Inside Support Gap (Green Box)", message = "{{ticker}}: inside a confirmed support gap box")
 alertcondition(insideResistanceGap, title = "Screener: Inside Resistance Gap (Red Box)", message = "{{ticker}}: inside a confirmed resistance gap box")
+
+alertcondition(openAboveSma20, title = "Screener: Open Above 20 SMA", message = "{{ticker}}: open above the 20 SMA")
+alertcondition(openBelowSma20, title = "Screener: Open Below 20 SMA", message = "{{ticker}}: open below the 20 SMA")
+alertcondition(priceWithinSma20Band, title = "Screener: Within 5% of 20 SMA", message = "{{ticker}}: price within 5% of the 20 SMA")
+alertcondition(crossedSma20, title = "Screener: Price Crossed 20 SMA", message = "{{ticker}}: price crossed the 20 SMA")
+
 alertcondition(openAboveSma50, title = "Screener: Open Above 50 SMA", message = "{{ticker}}: open above the 50 SMA")
 alertcondition(openBelowSma50, title = "Screener: Open Below 50 SMA", message = "{{ticker}}: open below the 50 SMA")
 alertcondition(priceWithinSma50Band, title = "Screener: Within 5% of 50 SMA", message = "{{ticker}}: price within 5% of the 50 SMA")
 alertcondition(crossedSma50, title = "Screener: Price Crossed 50 SMA", message = "{{ticker}}: price crossed the 50 SMA")
+
+alertcondition(openAboveSma200, title = "Screener: Open Above 200 SMA", message = "{{ticker}}: open above the 200 SMA")
+alertcondition(openBelowSma200, title = "Screener: Open Below 200 SMA", message = "{{ticker}}: open below the 200 SMA")
+alertcondition(priceWithinSma200Band, title = "Screener: Within 5% of 200 SMA", message = "{{ticker}}: price within 5% of the 200 SMA")
+alertcondition(crossedSma200, title = "Screener: Price Crossed 200 SMA", message = "{{ticker}}: price crossed the 200 SMA")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
