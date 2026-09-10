@@ -16,7 +16,8 @@
 // Resistance Gap" fires when the symbol's close sits inside a CONFIRMED
 // green/red box; "Open Above/Below 50 SMA" fires on today's open vs. the
 // 50-period SMA; "Within 5% of 50 SMA" fires when the current price is
-// within +/-5% of its 50-period SMA.
+// within +/-5% of its 50-period SMA; "Price Crossed 50 SMA" fires on the
+// bar price crosses the 50 SMA in either direction.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -192,6 +193,7 @@ openAboveSma50 = open > sma50
 openBelowSma50 = open < sma50
 currentPrice = close // close is the live, continuously-updating price on the forming bar
 priceWithinSma50Band = math.abs(currentPrice - sma50) / sma50 <= 0.05
+crossedSma50 = ta.cross(currentPrice, sma50)
 
 // alertcondition() takes the boolean directly, so Pine Screener shows a
 // native "True" toggle for each of these - no plot cast or manual "= 1"
@@ -201,6 +203,7 @@ alertcondition(insideResistanceGap, title = "Screener: Inside Resistance Gap (Re
 alertcondition(openAboveSma50, title = "Screener: Open Above 50 SMA", message = "{{ticker}}: open above the 50 SMA")
 alertcondition(openBelowSma50, title = "Screener: Open Below 50 SMA", message = "{{ticker}}: open below the 50 SMA")
 alertcondition(priceWithinSma50Band, title = "Screener: Within 5% of 50 SMA", message = "{{ticker}}: price within 5% of the 50 SMA")
+alertcondition(crossedSma50, title = "Screener: Price Crossed 50 SMA", message = "{{ticker}}: price crossed the 50 SMA")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(enteredSupport, title = "Price entered support gap (green box)", message = "{{ticker}}: price entered a support gap box")
