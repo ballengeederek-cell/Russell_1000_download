@@ -1,18 +1,27 @@
 //@version=6
 // Opening Gap Boxes (Support / Resistance)
 //
-// A gap up leaves an unfilled zone between the prior close and today's open;
-// a gap down leaves one between today's open and the prior close. Whatever
-// part of that zone price does not trade through by the close of the gap
-// day becomes a box, left edge anchored one candle back at the pre-gap bar
-// (where the gap was created) and extended to the right. Every box update
-// - forming the gap day's box, confirming, shrinking, or deleting it on a
-// later day - happens only once, at that bar's close (barstate.isconfirmed),
-// using the day's final OHLC. A box never changes shape or color mid-day
-// while price is still moving; it only ever updates at market close. On
-// any later day price touches a box, it turns solid (confirmed) - whether
-// that day's close ends back outside the box or just lands inside it, in
-// which case the box also shrinks to be even with that close. It is
+// Gaps are always the DAILY gap - between yesterday's daily close and
+// today's daily open - fetched via request.security("D", ...) rather than
+// the chart's own bars. That means a 5-minute, 1-hour, or weekly chart all
+// draw the exact same boxes as the 1-day chart. Boxes use time-based
+// coordinates (xloc.bar_time), not bar-index ones, so they land in the
+// right place regardless of the chart's timeframe.
+//
+// A day's gap can only be evaluated once that day is fully over, so each
+// box update - forming a new gap day's box, confirming, shrinking, or
+// deleting one on a later day - fires exactly once, the moment the NEXT
+// daily bar begins (the earliest point a completed day's OHLC is known),
+// using that finished day's OHLC. A box never changes shape or color
+// intraday while price is still moving.
+//
+// Caveat: on timeframes ABOVE 1 day (weekly, monthly), Pine's
+// request.security can only sample one daily value per higher-timeframe
+// bar, so not every individual daily gap is visible there.
+//
+// On any later day price touches a box, it turns solid (confirmed) -
+// whether that day's close ends back outside the box or just lands inside
+// it, in which case the box also shrinks to be even with that close. It is
 // deleted the day price closes all the way through it.
 //
 // Screener use: each "Screener: ..." alertcondition() below shows up in
@@ -34,6 +43,8 @@ colResistanceConfirmed = input.color(color.new(color.red, 75), "Resistance gap -
 
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
+[dTime, dOpen, dHigh, dLow, dClose] = request.security(syminfo.tickerid, "D", [time, open, high, low, close], lookahead = barmerge.lookahead_off)
+
 var box[]    supportBoxes     = array.new_box()
 var float[]  supportTop       = array.new_float()
 var float[]  supportBottom    = array.new_float()
@@ -44,25 +55,42 @@ var float[]  resTop       = array.new_float()
 var float[]  resBottom    = array.new_float()
 var bool[]   resConfirmed = array.new_bool()
 
+// State carried from the last daily bar we finalized, so the next one
+// knows both its own gap baseline (lastDayClose) and where its box's
+// left edge belongs (lastDayTime).
+var int   lastProcessedDayTime = na
+var float lastDayClose         = na
+var int   lastDayTime          = na
+
 enteredSupport         = false
 enteredResistance      = false
 filledThroughSupport   = false
 filledThroughResistance = false
 
-// Every box mutation below runs only once per bar, at that bar's close,
-// using the day's final OHLC - never mid-bar while price is still moving.
-if barstate.isconfirmed
-    // ---- test/shrink/confirm/eliminate boxes created on earlier bars ----
+// A new daily bar has started (dTime just changed) and we haven't already
+// processed the day that just ended - this is the earliest, and only,
+// moment that day's OHLC is both complete and knowable, on any timeframe.
+dayJustEndedTime = dTime[1]
+newDayBoundary = dTime != dTime[1] and (na(lastProcessedDayTime) or dayJustEndedTime != lastProcessedDayTime)
+
+if newDayBoundary
+    dayOpen  = dOpen[1]
+    dayHigh  = dHigh[1]
+    dayLow   = dLow[1]
+    dayClose = dClose[1]
+    dayTime  = dayJustEndedTime
+
+    // ---- test/shrink/confirm/eliminate boxes formed on earlier days, using the day that just finished ----
     // (today's box, if any, is appended further down - after this loop -
-    // so it can never be tested on the same bar it forms)
+    // so it can never be tested on the same day it forms)
     if array.size(supportBoxes) > 0
         for i = array.size(supportBoxes) - 1 to 0
             top = array.get(supportTop, i)
             bot = array.get(supportBottom, i)
             bx  = array.get(supportBoxes, i)
-            if low <= top
+            if dayLow <= top
                 enteredSupport := true
-                if close < bot
+                if dayClose < bot
                     filledThroughSupport := true
                     box.delete(bx)
                     array.remove(supportBoxes, i)
@@ -76,18 +104,18 @@ if barstate.isconfirmed
                         array.set(supportConfirmed, i, true)
                         box.set_bgcolor(bx, colSupportConfirmed)
                         box.set_border_color(bx, color.green)
-                    if close < top
-                        array.set(supportTop, i, close)
-                        box.set_top(bx, close)
+                    if dayClose < top
+                        array.set(supportTop, i, dayClose)
+                        box.set_top(bx, dayClose)
 
     if array.size(resBoxes) > 0
         for i = array.size(resBoxes) - 1 to 0
             top = array.get(resTop, i)
             bot = array.get(resBottom, i)
             bx  = array.get(resBoxes, i)
-            if high >= bot
+            if dayHigh >= bot
                 enteredResistance := true
-                if close > top
+                if dayClose > top
                     filledThroughResistance := true
                     box.delete(bx)
                     array.remove(resBoxes, i)
@@ -101,9 +129,9 @@ if barstate.isconfirmed
                         array.set(resConfirmed, i, true)
                         box.set_bgcolor(bx, colResistanceConfirmed)
                         box.set_border_color(bx, color.red)
-                    if close > bot
-                        array.set(resBottom, i, close)
-                        box.set_bottom(bx, close)
+                    if dayClose > bot
+                        array.set(resBottom, i, dayClose)
+                        box.set_bottom(bx, dayClose)
 
     // ---- bound memory so tracked boxes never outrun the indicator's own box cap ----
     if array.size(supportBoxes) > maxTrackedBoxes
@@ -120,25 +148,29 @@ if barstate.isconfirmed
         array.remove(resBottom, 0)
         array.remove(resConfirmed, 0)
 
-    // ---- form today's gap box in one shot, sized to the full day's range ----
-    prevClose = close[1]
-    if open > prevClose
-        topCandidate = math.min(open, low)
-        if topCandidate > prevClose
-            newBox = box.new(bar_index - 1, topCandidate, bar_index, prevClose, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
-            array.push(supportBoxes, newBox)
-            array.push(supportTop, topCandidate)
-            array.push(supportBottom, prevClose)
-            array.push(supportConfirmed, false)
-        // else: price traded all the way back through the gap by the close - no box
-    else if open < prevClose
-        bottomCandidate = math.max(open, high)
-        if bottomCandidate < prevClose
-            newBox = box.new(bar_index - 1, prevClose, bar_index, bottomCandidate, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
-            array.push(resBoxes, newBox)
-            array.push(resTop, prevClose)
-            array.push(resBottom, bottomCandidate)
-            array.push(resConfirmed, false)
+    // ---- was the day that just finished itself a gap day (vs. the day before it)? ----
+    if not na(lastDayClose)
+        if dayOpen > lastDayClose
+            topCandidate = math.min(dayOpen, dayLow)
+            if topCandidate > lastDayClose
+                newBox = box.new(lastDayTime, topCandidate, dayTime, lastDayClose, xloc = xloc.bar_time, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+                array.push(supportBoxes, newBox)
+                array.push(supportTop, topCandidate)
+                array.push(supportBottom, lastDayClose)
+                array.push(supportConfirmed, false)
+            // else: price traded all the way back through the gap by that day's close - no box
+        else if dayOpen < lastDayClose
+            bottomCandidate = math.max(dayOpen, dayHigh)
+            if bottomCandidate < lastDayClose
+                newBox = box.new(lastDayTime, lastDayClose, dayTime, bottomCandidate, xloc = xloc.bar_time, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+                array.push(resBoxes, newBox)
+                array.push(resTop, lastDayClose)
+                array.push(resBottom, bottomCandidate)
+                array.push(resConfirmed, false)
+
+    lastDayClose := dayClose
+    lastDayTime  := dayTime
+    lastProcessedDayTime := dayJustEndedTime
 
 // ---- Pine Screener booleans: is the current close inside a CONFIRMED (colored) box? ----
 insideSupportGap = false
