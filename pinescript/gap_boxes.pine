@@ -10,10 +10,10 @@
 //
 // A day's gap can only be evaluated once that day is fully over, so each
 // box update - forming a new gap day's box, confirming, shrinking, or
-// deleting one on a later day - fires exactly once, the moment the NEXT
-// daily bar begins (the earliest point a completed day's OHLC is known),
-// using that finished day's OHLC. A box never changes shape or color
-// intraday while price is still moving.
+// deleting one on a later day - fires exactly once, right at that day's
+// market close (1600 ET / the regular session's last bar), using that
+// day's finished OHLC. A box never changes shape or color intraday while
+// price is still moving.
 //
 // Caveat: on timeframes ABOVE 1 day (weekly, monthly), Pine's
 // request.security can only sample one daily value per higher-timeframe
@@ -55,30 +55,29 @@ var float[]  resTop       = array.new_float()
 var float[]  resBottom    = array.new_float()
 var bool[]   resConfirmed = array.new_bool()
 
-// State carried from the last daily bar we finalized, so the next one
-// knows both its own gap baseline (lastDayClose) and where its box's
-// left edge belongs (lastDayTime).
-var int   lastProcessedDayTime = na
-var float lastDayClose         = na
-var int   lastDayTime          = na
+// State carried from the last day we finalized, so the next one knows
+// both its own gap baseline (lastDayClose) and where its box's left edge
+// belongs (lastDayTime).
+var float lastDayClose = na
+var int   lastDayTime  = na
 
 enteredSupport         = false
 enteredResistance      = false
 filledThroughSupport   = false
 filledThroughResistance = false
 
-// A new daily bar has started (dTime just changed) and we haven't already
-// processed the day that just ended - this is the earliest, and only,
-// moment that day's OHLC is both complete and knowable, on any timeframe.
-dayJustEndedTime = dTime[1]
-newDayBoundary = dTime != dTime[1] and (na(lastProcessedDayTime) or dayJustEndedTime != lastProcessedDayTime)
+// Fires exactly once, at the close of the regular session (1600 ET): the
+// last bar of the day on an intraday chart, or the bar's own close on a
+// daily-or-slower chart. At that instant today's daily OHLC (unshifted)
+// is already final, so there's no need to wait for tomorrow's first bar.
+dayComplete = timeframe.isintraday ? (session.islastbar and barstate.isconfirmed) : barstate.isconfirmed
 
-if newDayBoundary
-    dayOpen  = dOpen[1]
-    dayHigh  = dHigh[1]
-    dayLow   = dLow[1]
-    dayClose = dClose[1]
-    dayTime  = dayJustEndedTime
+if dayComplete
+    dayOpen  = dOpen
+    dayHigh  = dHigh
+    dayLow   = dLow
+    dayClose = dClose
+    dayTime  = dTime
 
     // ---- test/shrink/confirm/eliminate boxes formed on earlier days, using the day that just finished ----
     // (today's box, if any, is appended further down - after this loop -
@@ -170,7 +169,6 @@ if newDayBoundary
 
     lastDayClose := dayClose
     lastDayTime  := dayTime
-    lastProcessedDayTime := dayJustEndedTime
 
 // ---- Pine Screener booleans: is the current close inside a CONFIRMED (colored) box? ----
 insideSupportGap = false
