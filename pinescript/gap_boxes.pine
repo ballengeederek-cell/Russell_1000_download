@@ -41,6 +41,11 @@ colSupportConfirmed    = input.color(color.new(color.lime, 75), "Support gap - c
 colResistanceUnfilled  = input.color(color.new(color.gray, 75), "Resistance gap - untested", group = "Colors")
 colResistanceConfirmed = input.color(color.new(color.red, 75), "Resistance gap - confirmed", group = "Colors")
 
+borderWidth                  = input.int(1, "Box border width", minval = 1, maxval = 5, group = "Borders")
+colUntestedBorder            = input.color(color.gray, "Untested gap border", group = "Borders")
+colSupportConfirmedBorder    = input.color(color.green, "Support gap - confirmed border", group = "Borders")
+colResistanceConfirmedBorder = input.color(color.red, "Resistance gap - confirmed border", group = "Borders")
+
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
 [dTime, dOpen, dHigh, dLow, dClose] = request.security(syminfo.tickerid, "D", [time, open, high, low, close], lookahead = barmerge.lookahead_off)
@@ -102,7 +107,7 @@ if dayComplete
                     if not array.get(supportConfirmed, i)
                         array.set(supportConfirmed, i, true)
                         box.set_bgcolor(bx, colSupportConfirmed)
-                        box.set_border_color(bx, color.green)
+                        box.set_border_color(bx, colSupportConfirmedBorder)
                     if dayClose < top
                         array.set(supportTop, i, dayClose)
                         box.set_top(bx, dayClose)
@@ -127,7 +132,7 @@ if dayComplete
                     if not array.get(resConfirmed, i)
                         array.set(resConfirmed, i, true)
                         box.set_bgcolor(bx, colResistanceConfirmed)
-                        box.set_border_color(bx, color.red)
+                        box.set_border_color(bx, colResistanceConfirmedBorder)
                     if dayClose > bot
                         array.set(resBottom, i, dayClose)
                         box.set_bottom(bx, dayClose)
@@ -152,7 +157,7 @@ if dayComplete
         if dayOpen > lastDayClose
             topCandidate = math.min(dayOpen, dayLow)
             if topCandidate > lastDayClose
-                newBox = box.new(lastDayTime, topCandidate, dayTime, lastDayClose, xloc = xloc.bar_time, border_color = color.new(color.gray, 100), bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+                newBox = box.new(lastDayTime, topCandidate, dayTime, lastDayClose, xloc = xloc.bar_time, border_color = colUntestedBorder, border_width = borderWidth, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
                 array.push(supportBoxes, newBox)
                 array.push(supportTop, topCandidate)
                 array.push(supportBottom, lastDayClose)
@@ -161,7 +166,7 @@ if dayComplete
         else if dayOpen < lastDayClose
             bottomCandidate = math.max(dayOpen, dayHigh)
             if bottomCandidate < lastDayClose
-                newBox = box.new(lastDayTime, lastDayClose, dayTime, bottomCandidate, xloc = xloc.bar_time, border_color = color.new(color.gray, 100), bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+                newBox = box.new(lastDayTime, lastDayClose, dayTime, bottomCandidate, xloc = xloc.bar_time, border_color = colUntestedBorder, border_width = borderWidth, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
                 array.push(resBoxes, newBox)
                 array.push(resTop, lastDayClose)
                 array.push(resBottom, bottomCandidate)
