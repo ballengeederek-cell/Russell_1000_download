@@ -28,10 +28,12 @@
 // Pine Screener with its own True toggle - just add this script and switch
 // the column on, no manual "= 1" filter setup needed. "Inside Support/
 // Resistance Gap" fires when the symbol's close sits inside a CONFIRMED
-// green/red box. For the 20/50/200 SMAs: "Open Above/Below <N> SMA" fires
-// on today's open vs. that SMA; "Within 5% of <N> SMA" fires when the
-// current price is within +/-5% of it; "Price Crossed <N> SMA" fires on
-// the bar price crosses it in either direction.
+// green/red box; "50 SMA (Market Close) Inside Support/Resistance Gap"
+// fires when the 50 SMA of daily closes itself sits inside one. For the
+// 20/50/200 SMAs: "Open Above/Below <N> SMA" fires on today's open vs.
+// that SMA; "Within 5% of <N> SMA" fires when the current price is within
+// +/-5% of it; "Price Crossed <N> SMA" fires on the bar price crosses it
+// in either direction.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -48,7 +50,7 @@ colResistanceConfirmedBorder = input.color(color.red, "Resistance gap - confirme
 
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
-[dTime, dOpen, dHigh, dLow, dClose] = request.security(syminfo.tickerid, "D", [time, open, high, low, close], lookahead = barmerge.lookahead_off)
+[dTime, dOpen, dHigh, dLow, dClose, dSma50] = request.security(syminfo.tickerid, "D", [time, open, high, low, close, ta.sma(close, 50)], lookahead = barmerge.lookahead_off)
 
 var box[]    supportBoxes     = array.new_box()
 var float[]  supportTop       = array.new_float()
@@ -188,6 +190,19 @@ if array.size(resBoxes) > 0
         if array.get(resConfirmed, i) and close >= array.get(resBottom, i) and close <= array.get(resTop, i)
             insideResistanceGap := true
 
+// ---- Pine Screener booleans: does the 50 SMA (of daily closes, at market close) sit inside a CONFIRMED box? ----
+sma50InsideSupportGap = false
+if array.size(supportBoxes) > 0
+    for i = 0 to array.size(supportBoxes) - 1
+        if array.get(supportConfirmed, i) and dSma50 >= array.get(supportBottom, i) and dSma50 <= array.get(supportTop, i)
+            sma50InsideSupportGap := true
+
+sma50InsideResistanceGap = false
+if array.size(resBoxes) > 0
+    for i = 0 to array.size(resBoxes) - 1
+        if array.get(resConfirmed, i) and dSma50 >= array.get(resBottom, i) and dSma50 <= array.get(resTop, i)
+            sma50InsideResistanceGap := true
+
 currentPrice = close // close is the live, continuously-updating price on the forming bar
 
 sma20 = ta.sma(close, 20)
@@ -213,6 +228,8 @@ crossedSma200 = ta.cross(currentPrice, sma200)
 // filter setup needed.
 alertcondition(insideSupportGap, title = "Screener: Inside Support Gap (Green Box)", message = "{{ticker}}: inside a confirmed support gap box")
 alertcondition(insideResistanceGap, title = "Screener: Inside Resistance Gap (Red Box)", message = "{{ticker}}: inside a confirmed resistance gap box")
+alertcondition(sma50InsideSupportGap, title = "Screener: 50 SMA (Market Close) Inside Support Gap", message = "{{ticker}}: 50 SMA of daily closes sits inside a confirmed support gap box")
+alertcondition(sma50InsideResistanceGap, title = "Screener: 50 SMA (Market Close) Inside Resistance Gap", message = "{{ticker}}: 50 SMA of daily closes sits inside a confirmed resistance gap box")
 
 alertcondition(openAboveSma20, title = "Screener: Open Above 20 SMA", message = "{{ticker}}: open above the 20 SMA")
 alertcondition(openBelowSma20, title = "Screener: Open Below 20 SMA", message = "{{ticker}}: open below the 20 SMA")
