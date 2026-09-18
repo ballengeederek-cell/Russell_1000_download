@@ -11,13 +11,16 @@
 // A brand-new gap day's box forms right at today's open and keeps
 // resizing live all day as price moves, exactly like it would on the
 // 1-day chart - shrinking toward whichever side price trades into, or
-// disappearing if price fills the gap entirely intraday. Once the market
-// closes (1600 ET / the regular session's last bar) that gray box is
-// locked in at whatever size it ended the day at, and never changes again
-// except by being tested on a later day. Boxes formed on EARLIER days -
-// confirming, shrinking, or deleting one - only ever update once, at that
-// same market close, using the day's finished OHLC; they never change
-// shape or color intraday.
+// disappearing if price fills the gap entirely intraday. The moment the
+// symbol's regular session ends (e.g. 1600 ET) that gray box is locked in
+// at whatever size it ended the day at, and never changes again except by
+// being tested on a later day. This fires from the session clock itself,
+// not barstate.isconfirmed, so it lands right at the close on every chart
+// timeframe - including the 1-day chart, which otherwise wouldn't confirm
+// today's bar until tomorrow's bar starts forming. Boxes formed on
+// EARLIER days - confirming, shrinking, or deleting one - only ever
+// update once, at that same market close, using the day's finished OHLC;
+// they never change shape or color intraday.
 //
 // Caveat: on timeframes ABOVE 1 day (weekly, monthly), Pine's
 // request.security can only sample one daily value per higher-timeframe
@@ -56,6 +59,11 @@ maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own
 
 [dTime, dOpen, dHigh, dLow, dClose, dSma50] = request.security(syminfo.tickerid, "D", [time, open, high, low, close, ta.sma(close, 50)], lookahead = barmerge.lookahead_off)
 
+// True from the instant the symbol's regular session ends (e.g. 1600 ET)
+// until it reopens - sampled at 1-minute resolution so it flips the moment
+// the close happens, regardless of what timeframe the chart itself is on.
+regularSessionOver = request.security(syminfo.tickerid, "1", na(time(timeframe.period, session.regular)), lookahead = barmerge.lookahead_off)
+
 var box[]    supportBoxes     = array.new_box()
 var float[]  supportTop       = array.new_float()
 var float[]  supportBottom    = array.new_float()
@@ -79,6 +87,11 @@ var box    pendingBox  = na
 var int    pendingDay  = na
 var string pendingSide = na
 
+// Latches true once today's boxes have been finalized, so dayComplete can
+// only fire once per day even though regularSessionOver stays true for
+// the rest of the day (and through pre-market tomorrow).
+var bool dayFinalized = false
+
 enteredSupport         = false
 enteredResistance      = false
 filledThroughSupport   = false
@@ -91,6 +104,7 @@ if isNewDay
     pendingDay := dTime
     pendingBox := na
     pendingSide := na
+    dayFinalized := false
     if not na(lastDayClose)
         if dOpen > lastDayClose
             pendingSide := "support"
@@ -142,13 +156,14 @@ if pendingSide == "resistance"
         array.pop(resBirth)
         pendingBox := na
 
-// Fires exactly once, at the close of the regular session (1600 ET): the
-// last bar of the day on an intraday chart, or the bar's own close on a
-// daily-or-slower chart. At that instant today's daily OHLC (unshifted)
-// is already final, so there's no need to wait for tomorrow's first bar.
-dayComplete = timeframe.isintraday ? (session.islastbar and barstate.isconfirmed) : barstate.isconfirmed
+// Fires exactly once, the moment the regular session ends (e.g. 1600 ET) -
+// on any chart timeframe, including the 1-day chart itself, since it
+// doesn't depend on barstate.isconfirmed (which wouldn't go true on a
+// daily bar until tomorrow's bar starts forming).
+dayComplete = regularSessionOver and not dayFinalized
 
 if dayComplete
+    dayFinalized := true
     dayHigh  = dHigh
     dayLow   = dLow
     dayClose = dClose
