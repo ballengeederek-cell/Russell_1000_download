@@ -1,0 +1,194 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ballengeederek
+
+//@version=6
+indicator("RS Rating - vs SPY & Industry", overlay = true, max_labels_count = 50)
+
+// === Inputs ===
+grpBench = "Benchmarks"
+benchSymbol1   = input.symbol("SPY", "Benchmark 1 (Market)", group = grpBench)
+useAutoSector  = input.bool(true, "Auto-pick Benchmark 2 from sector", group = grpBench, tooltip = "Uses the chart symbol's sector (syminfo.sector) to pick a SPDR sector ETF as a stand-in for its industry group. Turn off to enter your own symbol below.")
+benchSymbol2Manual = input.symbol("XLK", "Benchmark 2 (Industry/Sector, manual)", group = grpBench, tooltip = "Used only when auto-pick is off, or when auto-pick can't resolve a sector.")
+
+grpCalc = "RS Calculation"
+rsLookback = input.int(63, "RS Lookback (bars)", minval = 5, maxval = 2000, group = grpCalc, tooltip = "Relative performance vs the benchmark is rebased to 100 as of this many bars ago. 63 ≈ 1 quarter on Daily. RS Rating > 100 means the symbol has outperformed the benchmark over this window (Market Leader); < 100 means it has underperformed.")
+trendLen   = input.int(10, "Trend Average Length (days)", minval = 2, maxval = 100, group = grpCalc, tooltip = "RS Rating is smoothed with this SMA; trend = rising vs falling average.")
+leaderLevel = input.float(100, "Market Leader Level", group = grpCalc, tooltip = "RS Rating above this value is tagged Market Leader.")
+strongLevel = input.float(80, "Strong RS Level (screener)", group = grpCalc, tooltip = "Threshold used by the RS > 80 screener columns below.")
+
+grpSpark = "1-Month RS Line (Table Sparkline)"
+sparkLen = input.int(21, "Sparkline Length (bars)", minval = 5, maxval = 100, group = grpSpark, tooltip = "≈ 1 month of Daily bars. Adjust proportionally on other timeframes.")
+
+grpTable = "Table"
+showTable   = input.bool(true, "Show Table", group = grpTable)
+tablePos    = input.string("Top Right", "Table Position", options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], group = grpTable)
+tableSize   = input.string("Normal", "Text Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = grpTable)
+showRatingNum = input.bool(true, "Show numeric RS Rating", group = grpTable)
+colUp       = input.color(color.new(color.lime, 0), "Uptrend Color", group = grpTable)
+colDown     = input.color(color.new(color.red, 0), "Downtrend Color", group = grpTable)
+colFlat     = input.color(color.new(color.gray, 0), "Flat Color", group = grpTable)
+colLeader   = input.color(color.new(color.yellow, 0), "Market Leader Color", group = grpTable)
+colBg       = input.color(color.new(color.black, 70), "Table Background", group = grpTable)
+colText     = input.color(color.white, "Header/Text Color", group = grpTable)
+
+// === Resolve Benchmark 2 (sector proxy) ===
+f_sectorToETF(sector) =>
+    switch sector
+        "Technology Services"          => "XLK"
+        "Electronic Technology"        => "XLK"
+        "Technology"                   => "XLK"
+        "Communications"               => "XLC"
+        "Health Technology"            => "XLV"
+        "Health Services"              => "XLV"
+        "Healthcare"                   => "XLV"
+        "Finance"                      => "XLF"
+        "Financials"                   => "XLF"
+        "Energy Minerals"              => "XLE"
+        "Non-Energy Minerals"          => "XLB"
+        "Industrial Services"          => "XLI"
+        "Producer Manufacturing"       => "XLI"
+        "Industrials"                  => "XLI"
+        "Process Industries"           => "XLB"
+        "Materials"                    => "XLB"
+        "Consumer Non-Durables"        => "XLP"
+        "Consumer Staples"             => "XLP"
+        "Consumer Durables"            => "XLY"
+        "Consumer Discretionary"       => "XLY"
+        "Retail Trade"                 => "XLY"
+        "Utilities"                    => "XLU"
+        "Transportation"               => "XLI"
+        "Commercial Services"          => "XLI"
+        "Distribution Services"        => "XLI"
+        "Real Estate"                  => "XLRE"
+        "Miscellaneous"                => "SPY"
+        => na
+
+autoETF = f_sectorToETF(syminfo.sector)
+resolvedBenchSymbol2 = useAutoSector and not na(autoETF) ? autoETF : benchSymbol2Manual
+
+// === Benchmark Data ===
+bench1Close = request.security(benchSymbol1, timeframe.period, close, lookahead = barmerge.lookahead_off)
+bench2Close = request.security(resolvedBenchSymbol2, timeframe.period, close, lookahead = barmerge.lookahead_off)
+
+// === RS Ratio & Rating ===
+// RS Rating rebases relative performance (price / benchmark) to 100 as of `rsLookback` bars ago.
+// 100 = matching the benchmark since then, >100 = outperforming (Market Leader), <100 = underperforming.
+// Unlike a percentile rank, this is NOT capped at 100 in either direction.
+ratio1 = close / bench1Close
+ratio2 = close / bench2Close
+
+// Because this script also calls request.security(), Pine's automatic sizing of the
+// historical buffer for a series indexed with a non-constant offset (ratio1[rsLookback])
+// is unreliable and can undersize the buffer, which surfaces as a runtime error once the
+// script actually needs bars beyond what it guessed. Declare the buffer explicitly, sized
+// to rsLookback's own maxval so it always covers whatever the user dials in.
+max_bars_back(ratio1, 2000)
+max_bars_back(ratio2, 2000)
+
+ratio1Base = ratio1[rsLookback]
+ratio2Base = ratio2[rsLookback]
+
+rsRating1 = ratio1Base != 0 ? (ratio1 / ratio1Base) * 100 : na
+rsRating2 = ratio2Base != 0 ? (ratio2 / ratio2Base) * 100 : na
+
+max_bars_back(rsRating1, 110)
+max_bars_back(rsRating2, 110)
+
+isLeader1 = rsRating1 > leaderLevel
+isLeader2 = rsRating2 > leaderLevel
+
+// === Trend from 10-day (trendLen) average of RS Rating ===
+rsAvg1 = ta.sma(rsRating1, trendLen)
+rsAvg2 = ta.sma(rsRating2, trendLen)
+
+trendUp1 = rsAvg1 > rsAvg1[1]
+trendUp2 = rsAvg2 > rsAvg2[1]
+trendFlat1 = rsAvg1 == rsAvg1[1]
+trendFlat2 = rsAvg2 == rsAvg2[1]
+
+f_trendColor(isUp, isFlat) =>
+    isFlat ? colFlat : isUp ? colUp : colDown
+f_trendText(isUp, isFlat) =>
+    isFlat ? "→ Flat" : isUp ? "▲ Uptrend" : "▼ Downtrend"
+
+// === Sparkline: last `sparkLen` bars of the RS Rating, rendered as a block-character mini chart ===
+f_sparkline(src, len) =>
+    string chars = "▁▂▃▄▅▆▇█"
+    float lo = 1e10
+    float hi = -1e10
+    for i = 0 to len - 1
+        v = src[i]
+        if not na(v)
+            lo := math.min(lo, v)
+            hi := math.max(hi, v)
+    string spark = ""
+    for i = len - 1 to 0 by -1
+        v = src[i]
+        idx = na(v) or hi == lo ? 0 : int(math.round((v - lo) / (hi - lo) * 7))
+        idx := math.max(0, math.min(7, idx))
+        spark := spark + str.substring(chars, idx, idx + 1)
+    spark
+
+// === Table ===
+f_tablePosition(posStr) =>
+    switch posStr
+        "Top Left"      => position.top_left
+        "Top Center"    => position.top_center
+        "Top Right"     => position.top_right
+        "Middle Left"   => position.middle_left
+        "Middle Center" => position.middle_center
+        "Middle Right"  => position.middle_right
+        "Bottom Left"   => position.bottom_left
+        "Bottom Center" => position.bottom_center
+        "Bottom Right"  => position.bottom_right
+        => position.top_right
+
+f_tableSize(sizeStr) =>
+    switch sizeStr
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        "Huge"   => size.huge
+        => size.normal
+
+var table rsTable = table.new(f_tablePosition(tablePos), 4, 3, border_width = 1, border_color = color.new(color.gray, 50))
+
+if showTable and barstate.islast
+    spark1 = f_sparkline(rsRating1, sparkLen)
+    spark2 = f_sparkline(rsRating2, sparkLen)
+
+    ratingText1 = (showRatingNum ? str.tostring(math.round(rsRating1)) : "") + (isLeader1 ? "\n★ Leader" : "")
+    ratingText2 = (showRatingNum ? str.tostring(math.round(rsRating2)) : "") + (isLeader2 ? "\n★ Leader" : "")
+
+    table.cell(rsTable, 0, 0, "Benchmark", bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 1, 0, "RS Rating", bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 2, 0, "1M RS Line", bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 3, 0, "Trend", bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+
+    table.cell(rsTable, 0, 1, "vs " + benchSymbol1, bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 1, 1, ratingText1, bgcolor = colBg, text_color = isLeader1 ? colLeader : colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 2, 1, spark1, bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 3, 1, f_trendText(trendUp1, trendFlat1), bgcolor = colBg, text_color = f_trendColor(trendUp1, trendFlat1), text_size = f_tableSize(tableSize))
+
+    table.cell(rsTable, 0, 2, "vs " + resolvedBenchSymbol2, bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 1, 2, ratingText2, bgcolor = colBg, text_color = isLeader2 ? colLeader : colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 2, 2, spark2, bgcolor = colBg, text_color = colText, text_size = f_tableSize(tableSize))
+    table.cell(rsTable, 3, 2, f_trendText(trendUp2, trendFlat2), bgcolor = colBg, text_color = f_trendColor(trendUp2, trendFlat2), text_size = f_tableSize(tableSize))
+
+// === Pine Screener columns ===
+// Add this indicator to the Pine Screener (TradingView > Screener > Indicators) and filter any of these
+// columns for "true" to scan symbols matching that condition.
+rsOver80_SPY      = rsRating1 > strongLevel
+rsOver80_Sector   = rsRating2 > strongLevel
+marketLeader_SPY    = isLeader1
+marketLeader_Sector  = isLeader2
+rsUptrend_SPY     = trendUp1
+rsUptrend_Sector  = trendUp2
+
+plot(rsOver80_SPY      ? 1 : 0, "Screener: RS > 80 vs SPY",          display = display.data_window)
+plot(rsOver80_Sector   ? 1 : 0, "Screener: RS > 80 vs Sector",       display = display.data_window)
+plot(marketLeader_SPY    ? 1 : 0, "Screener: Market Leader vs SPY",    display = display.data_window)
+plot(marketLeader_Sector ? 1 : 0, "Screener: Market Leader vs Sector", display = display.data_window)
+plot(rsUptrend_SPY     ? 1 : 0, "Screener: RS Uptrend vs SPY",       display = display.data_window)
+plot(rsUptrend_Sector  ? 1 : 0, "Screener: RS Uptrend vs Sector",    display = display.data_window)
