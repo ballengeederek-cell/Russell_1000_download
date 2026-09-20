@@ -33,17 +33,16 @@
 //
 // Screener use: each "Screener: ..." alertcondition() below shows up in
 // Pine Screener with its own True toggle - just add this script and switch
-// the column on, no manual "= 1" filter setup needed. Every one of them is
-// configured from a settings group above rather than fixed per period/side:
-// "Open vs MA" fires when today's open is above/below the SMA/EMA and
-// period chosen under "Open vs MA"; "MA Cross" fires when price crosses
-// the SMA/EMA and period chosen under "MA Cross"; "Within % of MA" fires
-// when price is within the chosen % of the SMA/EMA and period chosen
-// under "Within % of MA"; "Gap Condition" fires on the event (price
-// entering / inside-confirmed / filled-through / 50 SMA inside) and side
-// (support/resistance) chosen under "Gap Condition" - so, for example,
-// picking Event = "Price Entering" and Side = "Support" makes that one
-// column true whenever price enters a support gap.
+// the column on, no manual "= 1" filter setup needed. Pine Screener can't
+// reach a script's own inputs (Type, Period, ...) from inside a filter -
+// on either desktop or mobile - so every SMA/EMA condition is its own
+// fixed column at a fixed period (20/50/200) rather than one shared
+// adjustable setting: "Open Above/Below <MA>(<period>)", "Price Crossed
+// <MA>(<period>)", and "Within 5% of <MA>(<period>)". The gap columns are
+// likewise all separate: "Inside Support/Resistance Gap" (CONFIRMED
+// green/red box), "Price Entering Support/Resistance Gap", "Support/
+// Resistance Gap Filled Through", and "50 SMA Inside Support/Resistance
+// Gap" (the 50 SMA of daily closes sitting inside a confirmed box).
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -64,29 +63,6 @@ colResistanceConfirmed = input.color(color.new(color.red, 75), "Resistance gap -
 borderWidth                  = input.int(1, "Box border width", minval = 1, maxval = 5, group = "Borders")
 colSupportConfirmedBorder    = input.color(color.green, "Support gap - confirmed border", group = "Borders")
 colResistanceConfirmedBorder = input.color(color.red, "Resistance gap - confirmed border", group = "Borders")
-
-// One adjustable MA cross screener, replacing the old fixed 20/50/200 set -
-// pick the type and period here, then filter the single "MA Cross" column.
-maCrossType   = input.string("SMA", "Type", options = ["SMA", "EMA"], inline = "maCross", group = "MA Cross")
-maCrossPeriod = input.int(50, "Period", minval = 1, inline = "maCross", group = "MA Cross")
-
-// Same idea for the "within %" screener - type, period, and the percent
-// band are all adjustable, replacing the old fixed 20/50/200 set.
-withinType    = input.string("SMA", "Type", options = ["SMA", "EMA"], inline = "withinMA", group = "Within % of MA")
-withinPeriod  = input.int(50, "Period", minval = 1, inline = "withinMA", group = "Within % of MA")
-withinPercent = input.float(5.0, "Within %", minval = 0.1, step = 0.1, inline = "withinMA", group = "Within % of MA")
-
-// One gap screener covering both sides - pick which event and which side,
-// then filter the single "Gap Condition" column.
-gapEvent = input.string("Price Entering", "Event", options = ["Price Entering", "Price Inside (Confirmed)", "Price Filled Through", "50 SMA Inside"], inline = "gapCond", group = "Gap Condition")
-gapSide  = input.string("Support", "Side", options = ["Support", "Resistance"], inline = "gapCond", group = "Gap Condition")
-
-// One adjustable "open vs MA" screener, replacing the old fixed 20/50/200
-// above/below set - pick type, period, and direction, then filter the
-// single "Open vs MA" column.
-openMaType      = input.string("SMA", "Type", options = ["SMA", "EMA"], inline = "openMA", group = "Open vs MA")
-openMaPeriod    = input.int(50, "Period", minval = 1, inline = "openMA", group = "Open vs MA")
-openMaDirection = input.string("Above", "Direction", options = ["Above", "Below"], inline = "openMA", group = "Open vs MA")
 
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
@@ -315,34 +291,83 @@ if array.size(resBoxes) > 0
 
 currentPrice = close // close is the live, continuously-updating price on the forming bar
 
-// ---- adjustable open vs MA (replaces the old fixed 20/50/200 above/below set) ----
-openMaValue = openMaType == "EMA" ? ta.ema(close, openMaPeriod) : ta.sma(close, openMaPeriod)
-openVsMaCondition = openMaDirection == "Above" ? open > openMaValue : open < openMaValue
+// Pine Screener can only filter True/False on a boolean column (or a
+// numeric comparison on a plotted number) - it can't expose a script's
+// own inputs (Type, Period, ...) from inside that filter, on desktop or
+// mobile. So each SMA/EMA x period combination below is its own fixed
+// column instead of one shared adjustable setting.
+sma20  = ta.sma(close, 20)
+sma50  = ta.sma(close, 50)
+sma200 = ta.sma(close, 200)
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
 
-// ---- adjustable MA cross (replaces the old fixed 20/50/200 cross set) ----
-maCrossValue = maCrossType == "EMA" ? ta.ema(close, maCrossPeriod) : ta.sma(close, maCrossPeriod)
-crossedMA = ta.cross(currentPrice, maCrossValue)
+openAboveSma20  = open > sma20
+openBelowSma20  = open < sma20
+openAboveSma50  = open > sma50
+openBelowSma50  = open < sma50
+openAboveSma200 = open > sma200
+openBelowSma200 = open < sma200
+openAboveEma20  = open > ema20
+openBelowEma20  = open < ema20
+openAboveEma50  = open > ema50
+openBelowEma50  = open < ema50
+openAboveEma200 = open > ema200
+openBelowEma200 = open < ema200
 
-// ---- adjustable within-% of MA (replaces the old fixed 20/50/200 set) ----
-withinMAValue = withinType == "EMA" ? ta.ema(close, withinPeriod) : ta.sma(close, withinPeriod)
-priceWithinMABand = math.abs(currentPrice - withinMAValue) / withinMAValue <= (withinPercent / 100)
+crossedSma20  = ta.cross(currentPrice, sma20)
+crossedSma50  = ta.cross(currentPrice, sma50)
+crossedSma200 = ta.cross(currentPrice, sma200)
+crossedEma20  = ta.cross(currentPrice, ema20)
+crossedEma50  = ta.cross(currentPrice, ema50)
+crossedEma200 = ta.cross(currentPrice, ema200)
 
-// ---- combined gap condition (replaces the separate per-side gap screeners) ----
-gapConditionValue = gapSide == "Support" ?
-     (gapEvent == "Price Entering" ? enteredSupport : gapEvent == "Price Inside (Confirmed)" ? insideSupportGap : gapEvent == "Price Filled Through" ? filledThroughSupport : sma50InsideSupportGap) :
-     (gapEvent == "Price Entering" ? enteredResistance : gapEvent == "Price Inside (Confirmed)" ? insideResistanceGap : gapEvent == "Price Filled Through" ? filledThroughResistance : sma50InsideResistanceGap)
+withinSma20  = math.abs(currentPrice - sma20) / sma20 <= 0.05
+withinSma50  = math.abs(currentPrice - sma50) / sma50 <= 0.05
+withinSma200 = math.abs(currentPrice - sma200) / sma200 <= 0.05
+withinEma20  = math.abs(currentPrice - ema20) / ema20 <= 0.05
+withinEma50  = math.abs(currentPrice - ema50) / ema50 <= 0.05
+withinEma200 = math.abs(currentPrice - ema200) / ema200 <= 0.05
 
 // alertcondition() takes the boolean directly, so Pine Screener shows a
 // native "True" toggle for each of these - no plot cast or manual "= 1"
-// filter setup needed. The Open vs MA, MA Cross, Within % of MA, and Gap
-// Condition settings groups above configure what each of these actually
-// checks, so there is one column per category instead of one per period/side.
-// (message must be a const string - it can't embed the input values, so
-// it just names the category; the settings panel shows the exact config.)
-alertcondition(openVsMaCondition, title = "Screener: Open vs MA", message = "{{ticker}}: open vs MA condition met")
-alertcondition(crossedMA, title = "Screener: MA Cross", message = "{{ticker}}: price crossed the selected MA")
-alertcondition(priceWithinMABand, title = "Screener: Within % of MA", message = "{{ticker}}: price is within the selected % of the selected MA")
-alertcondition(gapConditionValue, title = "Screener: Gap Condition", message = "{{ticker}}: selected gap condition is true")
+// filter setup needed.
+alertcondition(openAboveSma20, title = "Screener: Open Above SMA(20)", message = "{{ticker}}: open above SMA(20)")
+alertcondition(openBelowSma20, title = "Screener: Open Below SMA(20)", message = "{{ticker}}: open below SMA(20)")
+alertcondition(openAboveSma50, title = "Screener: Open Above SMA(50)", message = "{{ticker}}: open above SMA(50)")
+alertcondition(openBelowSma50, title = "Screener: Open Below SMA(50)", message = "{{ticker}}: open below SMA(50)")
+alertcondition(openAboveSma200, title = "Screener: Open Above SMA(200)", message = "{{ticker}}: open above SMA(200)")
+alertcondition(openBelowSma200, title = "Screener: Open Below SMA(200)", message = "{{ticker}}: open below SMA(200)")
+alertcondition(openAboveEma20, title = "Screener: Open Above EMA(20)", message = "{{ticker}}: open above EMA(20)")
+alertcondition(openBelowEma20, title = "Screener: Open Below EMA(20)", message = "{{ticker}}: open below EMA(20)")
+alertcondition(openAboveEma50, title = "Screener: Open Above EMA(50)", message = "{{ticker}}: open above EMA(50)")
+alertcondition(openBelowEma50, title = "Screener: Open Below EMA(50)", message = "{{ticker}}: open below EMA(50)")
+alertcondition(openAboveEma200, title = "Screener: Open Above EMA(200)", message = "{{ticker}}: open above EMA(200)")
+alertcondition(openBelowEma200, title = "Screener: Open Below EMA(200)", message = "{{ticker}}: open below EMA(200)")
+
+alertcondition(crossedSma20, title = "Screener: Price Crossed SMA(20)", message = "{{ticker}}: price crossed SMA(20)")
+alertcondition(crossedSma50, title = "Screener: Price Crossed SMA(50)", message = "{{ticker}}: price crossed SMA(50)")
+alertcondition(crossedSma200, title = "Screener: Price Crossed SMA(200)", message = "{{ticker}}: price crossed SMA(200)")
+alertcondition(crossedEma20, title = "Screener: Price Crossed EMA(20)", message = "{{ticker}}: price crossed EMA(20)")
+alertcondition(crossedEma50, title = "Screener: Price Crossed EMA(50)", message = "{{ticker}}: price crossed EMA(50)")
+alertcondition(crossedEma200, title = "Screener: Price Crossed EMA(200)", message = "{{ticker}}: price crossed EMA(200)")
+
+alertcondition(withinSma20, title = "Screener: Within 5% of SMA(20)", message = "{{ticker}}: price within 5% of SMA(20)")
+alertcondition(withinSma50, title = "Screener: Within 5% of SMA(50)", message = "{{ticker}}: price within 5% of SMA(50)")
+alertcondition(withinSma200, title = "Screener: Within 5% of SMA(200)", message = "{{ticker}}: price within 5% of SMA(200)")
+alertcondition(withinEma20, title = "Screener: Within 5% of EMA(20)", message = "{{ticker}}: price within 5% of EMA(20)")
+alertcondition(withinEma50, title = "Screener: Within 5% of EMA(50)", message = "{{ticker}}: price within 5% of EMA(50)")
+alertcondition(withinEma200, title = "Screener: Within 5% of EMA(200)", message = "{{ticker}}: price within 5% of EMA(200)")
+
+alertcondition(insideSupportGap, title = "Screener: Inside Support Gap (Green Box)", message = "{{ticker}}: inside a confirmed support gap box")
+alertcondition(insideResistanceGap, title = "Screener: Inside Resistance Gap (Red Box)", message = "{{ticker}}: inside a confirmed resistance gap box")
+alertcondition(enteredSupport, title = "Screener: Price Entering Support Gap", message = "{{ticker}}: price entering a support gap box")
+alertcondition(enteredResistance, title = "Screener: Price Entering Resistance Gap", message = "{{ticker}}: price entering a resistance gap box")
+alertcondition(filledThroughSupport, title = "Screener: Support Gap Filled Through", message = "{{ticker}}: price closed all the way through a support gap box")
+alertcondition(filledThroughResistance, title = "Screener: Resistance Gap Filled Through", message = "{{ticker}}: price closed all the way through a resistance gap box")
+alertcondition(sma50InsideSupportGap, title = "Screener: 50 SMA Inside Support Gap", message = "{{ticker}}: 50 SMA of daily closes sits inside a confirmed support gap box")
+alertcondition(sma50InsideResistanceGap, title = "Screener: 50 SMA Inside Resistance Gap", message = "{{ticker}}: 50 SMA of daily closes sits inside a confirmed resistance gap box")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(filledThroughSupport or filledThroughResistance, title = "Price moved through an entire gap box", message = "{{ticker}}: price closed completely through a gap box")
