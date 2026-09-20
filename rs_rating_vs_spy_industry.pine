@@ -154,10 +154,17 @@ f_tableSize(sizeStr) =>
 
 var table rsTable = table.new(f_tablePosition(tablePos), 4, 3, border_width = 1, border_color = color.new(color.gray, 50))
 
-if showTable and barstate.islast
-    spark1 = f_sparkline(rsRating1, sparkLen)
-    spark2 = f_sparkline(rsRating2, sparkLen)
+// f_sparkline() reads rsRating1/rsRating2 up to `sparkLen` bars back. Pine sizes each
+// series' historical buffer by watching which code paths actually run while it walks
+// history; a deep read that lives inside `if barstate.islast` (true only on the final
+// bar) is invisible to that pass, so the buffer comes back undersized and the script
+// faults with a runtime error the moment barstate.islast finally turns true. Calling
+// f_sparkline() here, unconditionally on every bar, keeps the deep read on a code path
+// Pine can see from the start; only the table draw below stays gated to the last bar.
+spark1 = f_sparkline(rsRating1, sparkLen)
+spark2 = f_sparkline(rsRating2, sparkLen)
 
+if showTable and barstate.islast
     ratingText1 = (showRatingNum ? str.tostring(math.round(rsRating1)) : "") + (isLeader1 ? "\n★ Leader" : "")
     ratingText2 = (showRatingNum ? str.tostring(math.round(rsRating2)) : "") + (isLeader2 ? "\n★ Leader" : "")
 
