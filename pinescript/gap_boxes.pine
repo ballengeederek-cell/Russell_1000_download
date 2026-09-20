@@ -337,10 +337,12 @@ gapConditionValue = gapSide == "Support" ?
 // filter setup needed. The Open vs MA, MA Cross, Within % of MA, and Gap
 // Condition settings groups above configure what each of these actually
 // checks, so there is one column per category instead of one per period/side.
-alertcondition(openVsMaCondition, title = "Screener: Open vs MA", message = "{{ticker}}: open is " + openMaDirection + " the selected " + openMaType + "(" + str.tostring(openMaPeriod) + ")")
-alertcondition(crossedMA, title = "Screener: MA Cross", message = "{{ticker}}: price crossed the selected " + maCrossType + "(" + str.tostring(maCrossPeriod) + ")")
-alertcondition(priceWithinMABand, title = "Screener: Within % of MA", message = "{{ticker}}: price is within " + str.tostring(withinPercent) + "% of the selected " + withinType + "(" + str.tostring(withinPeriod) + ")")
-alertcondition(gapConditionValue, title = "Screener: Gap Condition", message = "{{ticker}}: " + gapEvent + " - " + gapSide + " gap")
+// (message must be a const string - it can't embed the input values, so
+// it just names the category; the settings panel shows the exact config.)
+alertcondition(openVsMaCondition, title = "Screener: Open vs MA", message = "{{ticker}}: open vs MA condition met")
+alertcondition(crossedMA, title = "Screener: MA Cross", message = "{{ticker}}: price crossed the selected MA")
+alertcondition(priceWithinMABand, title = "Screener: Within % of MA", message = "{{ticker}}: price is within the selected % of the selected MA")
+alertcondition(gapConditionValue, title = "Screener: Gap Condition", message = "{{ticker}}: selected gap condition is true")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(filledThroughSupport or filledThroughResistance, title = "Price moved through an entire gap box", message = "{{ticker}}: price closed completely through a gap box")
