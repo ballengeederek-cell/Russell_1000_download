@@ -33,17 +33,17 @@
 //
 // Screener use: each "Screener: ..." alertcondition() below shows up in
 // Pine Screener with its own True toggle - just add this script and switch
-// the column on, no manual "= 1" filter setup needed. Three of these are
-// configured from settings groups above rather than fixed per period/side:
-// "MA Cross" fires when price crosses the SMA/EMA and period chosen under
-// "MA Cross"; "Within % of MA" fires when price is within the chosen %
-// of the SMA/EMA and period chosen under "Within % of MA"; "Gap Condition"
-// fires on the event (price entering / inside-confirmed / filled-through /
-// 50 SMA inside) and side (support/resistance) chosen under "Gap
-// Condition" - so, for example, picking Event = "Price Entering" and
-// Side = "Support" makes that one column true whenever price enters a
-// support gap. The 20/50/200 "Open Above/Below <N> SMA" columns are still
-// fixed, one pair per period.
+// the column on, no manual "= 1" filter setup needed. Every one of them is
+// configured from a settings group above rather than fixed per period/side:
+// "Open vs MA" fires when today's open is above/below the SMA/EMA and
+// period chosen under "Open vs MA"; "MA Cross" fires when price crosses
+// the SMA/EMA and period chosen under "MA Cross"; "Within % of MA" fires
+// when price is within the chosen % of the SMA/EMA and period chosen
+// under "Within % of MA"; "Gap Condition" fires on the event (price
+// entering / inside-confirmed / filled-through / 50 SMA inside) and side
+// (support/resistance) chosen under "Gap Condition" - so, for example,
+// picking Event = "Price Entering" and Side = "Support" makes that one
+// column true whenever price enters a support gap.
 indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", overlay = true, max_boxes_count = 500)
 
 extendRight = input.bool(true, "Extend boxes to the right")
@@ -80,6 +80,13 @@ withinPercent = input.float(5.0, "Within %", minval = 0.1, step = 0.1, inline = 
 // then filter the single "Gap Condition" column.
 gapEvent = input.string("Price Entering", "Event", options = ["Price Entering", "Price Inside (Confirmed)", "Price Filled Through", "50 SMA Inside"], inline = "gapCond", group = "Gap Condition")
 gapSide  = input.string("Support", "Side", options = ["Support", "Resistance"], inline = "gapCond", group = "Gap Condition")
+
+// One adjustable "open vs MA" screener, replacing the old fixed 20/50/200
+// above/below set - pick type, period, and direction, then filter the
+// single "Open vs MA" column.
+openMaType      = input.string("SMA", "Type", options = ["SMA", "EMA"], inline = "openMA", group = "Open vs MA")
+openMaPeriod    = input.int(50, "Period", minval = 1, inline = "openMA", group = "Open vs MA")
+openMaDirection = input.string("Above", "Direction", options = ["Above", "Below"], inline = "openMA", group = "Open vs MA")
 
 maxTrackedBoxes = 240 // per side; keeps our arrays in sync with indicator's own max_boxes_count
 
@@ -308,17 +315,9 @@ if array.size(resBoxes) > 0
 
 currentPrice = close // close is the live, continuously-updating price on the forming bar
 
-sma20 = ta.sma(close, 20)
-openAboveSma20 = open > sma20
-openBelowSma20 = open < sma20
-
-sma50 = ta.sma(close, 50)
-openAboveSma50 = open > sma50
-openBelowSma50 = open < sma50
-
-sma200 = ta.sma(close, 200)
-openAboveSma200 = open > sma200
-openBelowSma200 = open < sma200
+// ---- adjustable open vs MA (replaces the old fixed 20/50/200 above/below set) ----
+openMaValue = openMaType == "EMA" ? ta.ema(close, openMaPeriod) : ta.sma(close, openMaPeriod)
+openVsMaCondition = openMaDirection == "Above" ? open > openMaValue : open < openMaValue
 
 // ---- adjustable MA cross (replaces the old fixed 20/50/200 cross set) ----
 maCrossValue = maCrossType == "EMA" ? ta.ema(close, maCrossPeriod) : ta.sma(close, maCrossPeriod)
@@ -335,21 +334,13 @@ gapConditionValue = gapSide == "Support" ?
 
 // alertcondition() takes the boolean directly, so Pine Screener shows a
 // native "True" toggle for each of these - no plot cast or manual "= 1"
-// filter setup needed. The MA Cross, Within % of MA, and Gap Condition
-// settings groups above configure what each of these three actually
+// filter setup needed. The Open vs MA, MA Cross, Within % of MA, and Gap
+// Condition settings groups above configure what each of these actually
 // checks, so there is one column per category instead of one per period/side.
+alertcondition(openVsMaCondition, title = "Screener: Open vs MA", message = "{{ticker}}: open is " + openMaDirection + " the selected " + openMaType + "(" + str.tostring(openMaPeriod) + ")")
 alertcondition(crossedMA, title = "Screener: MA Cross", message = "{{ticker}}: price crossed the selected " + maCrossType + "(" + str.tostring(maCrossPeriod) + ")")
 alertcondition(priceWithinMABand, title = "Screener: Within % of MA", message = "{{ticker}}: price is within " + str.tostring(withinPercent) + "% of the selected " + withinType + "(" + str.tostring(withinPeriod) + ")")
 alertcondition(gapConditionValue, title = "Screener: Gap Condition", message = "{{ticker}}: " + gapEvent + " - " + gapSide + " gap")
-
-alertcondition(openAboveSma20, title = "Screener: Open Above 20 SMA", message = "{{ticker}}: open above the 20 SMA")
-alertcondition(openBelowSma20, title = "Screener: Open Below 20 SMA", message = "{{ticker}}: open below the 20 SMA")
-
-alertcondition(openAboveSma50, title = "Screener: Open Above 50 SMA", message = "{{ticker}}: open above the 50 SMA")
-alertcondition(openBelowSma50, title = "Screener: Open Below 50 SMA", message = "{{ticker}}: open below the 50 SMA")
-
-alertcondition(openAboveSma200, title = "Screener: Open Above 200 SMA", message = "{{ticker}}: open above the 200 SMA")
-alertcondition(openBelowSma200, title = "Screener: Open Below 200 SMA", message = "{{ticker}}: open below the 200 SMA")
 
 alertcondition(enteredSupport or enteredResistance, title = "Price entered a gap box", message = "{{ticker}}: price entered a gap box")
 alertcondition(filledThroughSupport or filledThroughResistance, title = "Price moved through an entire gap box", message = "{{ticker}}: price closed completely through a gap box")
