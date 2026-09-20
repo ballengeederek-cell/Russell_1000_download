@@ -45,13 +45,20 @@ indicator("Opening Gap Boxes (Support/Resistance)", shorttitle = "GapBoxes", ove
 
 extendRight = input.bool(true, "Extend boxes to the right")
 
-colSupportUnfilled     = input.color(color.new(color.gray, 75), "Support gap - untested", group = "Colors")
+showCurrentDayGap = input.bool(true, "Show Current Day Gap", tooltip = "Draws today's still-forming gap box live and keeps it visible until the market closes. Turning this off only hides today's box - it is still tracked and can still turn into a confirmed support/resistance box on a later day.", group = "Current Day Gap")
+
+colUpBackground   = input.color(color.new(color.gray, 75), "Up Background", inline = "cdgUp", group = "Current Day Gap")
+colUpBorder       = input.color(color.white, "Border", inline = "cdgUp", group = "Current Day Gap")
+colDownBackground = input.color(color.new(color.gray, 75), "Down Background", inline = "cdgDown", group = "Current Day Gap")
+colDownBorder     = input.color(color.white, "Border", inline = "cdgDown", group = "Current Day Gap")
+
+currentDayBorderStyleInput = input.string("Solid", "Border Style", options = ["Solid", "Dashed", "Dotted"], group = "Current Day Gap")
+currentDayBorderStyle = currentDayBorderStyleInput == "Dashed" ? line.style_dashed : currentDayBorderStyleInput == "Dotted" ? line.style_dotted : line.style_solid
+
 colSupportConfirmed    = input.color(color.new(color.lime, 75), "Support gap - confirmed", group = "Colors")
-colResistanceUnfilled  = input.color(color.new(color.gray, 75), "Resistance gap - untested", group = "Colors")
 colResistanceConfirmed = input.color(color.new(color.red, 75), "Resistance gap - confirmed", group = "Colors")
 
 borderWidth                  = input.int(1, "Box border width", minval = 1, maxval = 5, group = "Borders")
-colUntestedBorder            = input.color(color.gray, "Untested gap border", group = "Borders")
 colSupportConfirmedBorder    = input.color(color.green, "Support gap - confirmed border", group = "Borders")
 colResistanceConfirmedBorder = input.color(color.red, "Resistance gap - confirmed border", group = "Borders")
 
@@ -111,12 +118,20 @@ if isNewDay
         else if dOpen < lastDayClose
             pendingSide := "resistance"
 
+// "Show Current Day Gap" only hides today's still-forming box - if it's
+// off, draw it fully transparent instead of skipping it, so it's still
+// tracked and can still become a visible confirmed box on a later day.
+effectiveUpBg       = showCurrentDayGap ? colUpBackground : color.new(color.white, 100)
+effectiveUpBorder   = showCurrentDayGap ? colUpBorder : color.new(color.white, 100)
+effectiveDownBg     = showCurrentDayGap ? colDownBackground : color.new(color.white, 100)
+effectiveDownBorder = showCurrentDayGap ? colDownBorder : color.new(color.white, 100)
+
 // ---- form/grow/shrink/drop today's gap box live, every bar, using today's running low/high ----
 if pendingSide == "support"
     topCandidate = math.min(dOpen, dLow)
     if topCandidate > lastDayClose
         if na(pendingBox)
-            pendingBox := box.new(lastDayTime, topCandidate, dTime, lastDayClose, xloc = xloc.bar_time, border_color = colUntestedBorder, border_width = borderWidth, bgcolor = colSupportUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(lastDayTime, topCandidate, dTime, lastDayClose, xloc = xloc.bar_time, border_color = effectiveUpBorder, border_width = borderWidth, border_style = currentDayBorderStyle, bgcolor = effectiveUpBg, extend = extendRight ? extend.right : extend.none)
             array.push(supportBoxes, pendingBox)
             array.push(supportTop, topCandidate)
             array.push(supportBottom, lastDayClose)
@@ -138,7 +153,7 @@ if pendingSide == "resistance"
     bottomCandidate = math.max(dOpen, dHigh)
     if bottomCandidate < lastDayClose
         if na(pendingBox)
-            pendingBox := box.new(lastDayTime, lastDayClose, dTime, bottomCandidate, xloc = xloc.bar_time, border_color = colUntestedBorder, border_width = borderWidth, bgcolor = colResistanceUnfilled, extend = extendRight ? extend.right : extend.none)
+            pendingBox := box.new(lastDayTime, lastDayClose, dTime, bottomCandidate, xloc = xloc.bar_time, border_color = effectiveDownBorder, border_width = borderWidth, border_style = currentDayBorderStyle, bgcolor = effectiveDownBg, extend = extendRight ? extend.right : extend.none)
             array.push(resBoxes, pendingBox)
             array.push(resTop, lastDayClose)
             array.push(resBottom, bottomCandidate)
