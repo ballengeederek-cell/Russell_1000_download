@@ -6,7 +6,7 @@ indicator("ADR / ATR / SMA Extension / RS Table", shorttitle = "ADR-ATR Table", 
 // ─────────────────────────────────────────────────────────────────────────────
 grpCalc = "Calculation"
 length    = input.int(14, "Lookback Length (days)", minval = 1, group = grpCalc,
-     tooltip = "Number of bars used for ADR, ADR%, ATR, ATR% and Relative Strength.")
+     tooltip = "Number of bars used for ADR, ADR%, ATR, ATR%, average volume and the short Relative Strength.")
 smaLength = input.int(50, "SMA Length", minval = 1, group = grpCalc,
      tooltip = "Moving average used for the ATR multiple (distance from SMA ÷ ATR%).")
 benchSym  = input.symbol("AMEX:SPY", "Relative Strength Benchmark", group = grpCalc)
@@ -17,13 +17,31 @@ rs3mLen   = input.int(63, "RS 3 Month Length (days)", minval = 1, group = grpCal
 useDaily  = input.bool(true, "Always use Daily bars", group = grpCalc,
      tooltip = "When on, every value is calculated from daily bars no matter which chart timeframe you are viewing. Turn off to use the chart's timeframe instead.")
 
-grpTable = "Table"
+grpShow = "Rows to Show"
+showHeader   = input.bool(false, "Ticker Header",         group = grpShow)
+showAdrPct   = input.bool(true,  "ADR%",                  group = grpShow)
+showAtrPct   = input.bool(true,  "ATR%",                  group = grpShow)
+showAdr      = input.bool(true,  "ADR",                   group = grpShow)
+showAtr      = input.bool(true,  "ATR",                   group = grpShow)
+showDolVol   = input.bool(true,  "Avg $ Vol",             group = grpShow)
+showAvgVol   = input.bool(true,  "Avg Vol",               group = grpShow)
+showSmaVal   = input.bool(false, "SMA Value",             group = grpShow)
+showDist     = input.bool(true,  "Distance from SMA",     group = grpShow)
+showAtrMult  = input.bool(true,  "ATR Multiple from SMA", group = grpShow)
+showRs       = input.bool(true,  "RS (Lookback Length)",  group = grpShow)
+showRs1m     = input.bool(true,  "RS 1 Month",            group = grpShow)
+showRs3m     = input.bool(true,  "RS 3 Month",            group = grpShow)
+showSector   = input.bool(true,  "Sector",                group = grpShow)
+showIndustry = input.bool(true,  "Industry Group",        group = grpShow)
+
+grpTable = "Table Style"
 tablePos    = input.string("Top Right", "Position", group = grpTable,
      options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"])
-textSizeOpt = input.string("Normal", "Text Size", options = ["Tiny", "Small", "Normal", "Large"], group = grpTable)
-bgColor     = input.color(color.new(#131722, 10), "Background", group = grpTable)
-headerColor = input.color(color.new(#2a2e39, 0), "Header Background", group = grpTable)
-textColor   = input.color(color.white, "Text", group = grpTable)
+textSizeOpt = input.string("Normal", "Text Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = grpTable)
+textColor   = input.color(#f5a33b, "Text", group = grpTable)
+bgColor     = input.color(color.new(color.black, 100), "Background", group = grpTable)
+colorSigned = input.bool(false, "Color +/− values", group = grpTable,
+     tooltip = "Color distance, ATR multiple and RS values with the Positive/Negative colors instead of the text color.")
 posColor    = input.color(#26a69a, "Positive", group = grpTable)
 negColor    = input.color(#ef5350, "Negative", group = grpTable)
 
@@ -37,20 +55,21 @@ smaColor = input.color(color.orange, "SMA Color", group = grpPlot)
 tf = useDaily ? "D" : timeframe.period
 
 calcStats() =>
-    adr      = ta.sma(high - low, length)
-    adrPct   = 100 * (ta.sma(high / low, length) - 1)
-    atr      = ta.atr(length)
-    atrPct   = 100 * atr / close
-    sma      = ta.sma(close, smaLength)
-    distPct  = 100 * (close - sma) / sma
-    atrMult  = distPct / atrPct
+    adr       = ta.sma(high - low, length)
+    adrPct    = 100 * (ta.sma(high / low, length) - 1)
+    atr       = ta.atr(length)
+    atrPct    = 100 * atr / close
+    sma       = ta.sma(close, smaLength)
+    distPct   = 100 * (close - sma) / sma
+    atrMult   = distPct / atrPct
     avgDolVol = ta.sma(volume * close, length)
-    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol]
+    avgVol    = ta.sma(volume, length)
+    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol, avgVol]
 
 calcReturns() =>
     [100 * (close / close[length] - 1), 100 * (close / close[rs1mLen] - 1), 100 * (close / close[rs3mLen] - 1)]
 
-[adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol] = request.security(syminfo.tickerid, tf, calcStats())
+[adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol, avgVol] = request.security(syminfo.tickerid, tf, calcStats())
 [stockRet, stockRet1m, stockRet3m] = request.security(syminfo.tickerid, tf, calcReturns())
 [benchRet, benchRet1m, benchRet3m] = request.security(benchSym, tf, calcReturns())
 
@@ -65,6 +84,8 @@ plot(showSma ? sma : na, "SMA", smaColor, 2)
 // ─────────────────────────────────────────────────────────────────────────────
 // Table
 // ─────────────────────────────────────────────────────────────────────────────
+MAX_ROWS = 16
+
 tblPosition = switch tablePos
     "Top Left"      => position.top_left
     "Top Center"    => position.top_center
@@ -79,44 +100,54 @@ txtSize = switch textSizeOpt
     "Tiny"  => size.tiny
     "Small" => size.small
     "Large" => size.large
+    "Huge"  => size.huge
     => size.normal
 
 benchParts = str.split(benchSym, ":")
 benchName  = array.get(benchParts, array.size(benchParts) - 1)
 
-signColor(v) => na(v) ? textColor : v >= 0 ? posColor : negColor
+signColor(v) => not colorSigned or na(v) ? textColor : v >= 0 ? posColor : negColor
 fmtNum(v, f) => na(v) ? "—" : str.tostring(v, f)
-fmtDollars(v) =>
-    na(v) ? "—" : v >= 1e9 ? "$" + str.tostring(v / 1e9, "0.00") + "B" : v >= 1e6 ? "$" + str.tostring(v / 1e6, "0.00") + "M" : v >= 1e3 ? "$" + str.tostring(v / 1e3, "0.00") + "K" : "$" + str.tostring(v, "0.00")
+fmtCompact(v, prefix) =>
+    na(v) ? "—" : v >= 1e9 ? prefix + str.tostring(v / 1e9, "0.00") + "B" : v >= 1e6 ? prefix + str.tostring(v / 1e6, "0.00") + "M" : v >= 1e3 ? prefix + str.tostring(v / 1e3, "0.00") + "K" : prefix + str.tostring(v, "0.00")
 fmtSigned(v, f, suffix) => na(v) ? "—" : (v >= 0 ? "+" : "") + str.tostring(v, f) + suffix
+fmtRs(ratio) => fmtSigned(100 * (ratio - 1), "0.00", "%") + " (" + fmtNum(ratio, "0.00") + ")"
 
-var table tbl = table.new(tblPosition, 2, 14, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
+var table tbl = table.new(tblPosition, 2, MAX_ROWS, bgcolor = bgColor, border_width = 0, frame_width = 0)
 
-addRow(row, label, value, valColor) =>
-    table.cell(tbl, 0, row, label, text_color = textColor, text_size = txtSize, text_halign = text.align_left)
-    table.cell(tbl, 1, row, value, text_color = valColor, text_size = txtSize, text_halign = text.align_right)
+// Each helper draws its row only when enabled and returns the next free row index
+addRow(row, show, label, value, valColor) =>
+    if show
+        table.cell(tbl, 0, row, label, text_color = textColor, text_size = txtSize, text_halign = text.align_center)
+        table.cell(tbl, 1, row, value, text_color = valColor, text_size = txtSize, text_halign = text.align_center)
+    show ? row + 1 : row
 
-addRsRow(row, label, ratio) =>
-    pct = 100 * (ratio - 1)
-    addRow(row, label, fmtSigned(pct, "0.00", "%") + "  (" + fmtNum(ratio, "0.00") + ")", signColor(pct))
+addWideRow(row, show, txt) =>
+    if show
+        table.cell(tbl, 0, row, txt, text_color = textColor, text_size = txtSize, text_halign = text.align_center)
+        table.merge_cells(tbl, 0, row, 1, row)
+    show ? row + 1 : row
 
 if barstate.islast
+    table.clear(tbl, 0, 0, 1, MAX_ROWS - 1)
     lenTxt = str.tostring(length)
     smaTxt = str.tostring(smaLength)
+    sector   = syminfo.sector   != "" ? syminfo.sector   : "—"
+    industry = syminfo.industry != "" ? syminfo.industry : "—"
 
-    table.cell(tbl, 0, 0, syminfo.ticker + "  (" + lenTxt + (useDaily ? "D" : " bars") + ")", bgcolor = headerColor, text_color = textColor, text_size = txtSize)
-    table.merge_cells(tbl, 0, 0, 1, 0)
-
-    addRow(1, "ADR %",              fmtNum(adrPct, "0.00") + "%", textColor)
-    addRow(2, "ATR %",              fmtNum(atrPct, "0.00") + "%", textColor)
-    addRow(3, "ADR",                fmtNum(adr, format.mintick), textColor)
-    addRow(4, "ATR",                fmtNum(atr, format.mintick), textColor)
-    addRow(5, "Avg $ Volume",       fmtDollars(avgDolVol), textColor)
-    addRow(6, smaTxt + " SMA",      fmtNum(sma, format.mintick), textColor)
-    addRow(7, "Dist from " + smaTxt + " SMA", fmtSigned(distPct, "0.00", "%"), signColor(distPct))
-    addRow(8, "ATR Multiple (" + smaTxt + " SMA)", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
-    addRow(9, syminfo.ticker + " " + lenTxt + " Return", fmtSigned(stockRet, "0.00", "%"), signColor(stockRet))
-    addRow(10, benchName + " " + lenTxt + " Return",      fmtSigned(benchRet, "0.00", "%"), signColor(benchRet))
-    addRsRow(11, "RS vs " + benchName + " (" + lenTxt + "D)", rsRatio)
-    addRsRow(12, "RS vs " + benchName + " (1M)", rsRatio1m)
-    addRsRow(13, "RS vs " + benchName + " (3M)", rsRatio3m)
+    r = 0
+    r := addWideRow(r, showHeader, syminfo.ticker)
+    r := addRow(r, showAdrPct,  "ADR%",      fmtNum(adrPct, "0.00") + "%", textColor)
+    r := addRow(r, showAtrPct,  "ATR%",      fmtNum(atrPct, "0.00") + "%", textColor)
+    r := addRow(r, showAdr,     "ADR",       fmtNum(adr, format.mintick), textColor)
+    r := addRow(r, showAtr,     "ATR",       fmtNum(atr, format.mintick), textColor)
+    r := addRow(r, showDolVol,  "Avg $ Vol", fmtCompact(avgDolVol, "$"), textColor)
+    r := addRow(r, showAvgVol,  "Avg Vol",   fmtCompact(avgVol, ""), textColor)
+    r := addRow(r, showSmaVal,  smaTxt + " SMA",       fmtNum(sma, format.mintick), textColor)
+    r := addRow(r, showDist,    "Dist " + smaTxt + " SMA", fmtSigned(distPct, "0.00", "%"), signColor(distPct))
+    r := addRow(r, showAtrMult, "ATR x " + smaTxt + " SMA", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
+    r := addRow(r, showRs,      "RS " + benchName + " " + lenTxt + "D", fmtRs(rsRatio),   signColor(rsRatio - 1))
+    r := addRow(r, showRs1m,    "RS " + benchName + " 1M",              fmtRs(rsRatio1m), signColor(rsRatio1m - 1))
+    r := addRow(r, showRs3m,    "RS " + benchName + " 3M",              fmtRs(rsRatio3m), signColor(rsRatio3m - 1))
+    r := addWideRow(r, showSector,   sector)
+    r := addWideRow(r, showIndustry, industry)
