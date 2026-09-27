@@ -41,12 +41,13 @@ calcStats() =>
     distPct  = 100 * (close - sma) / sma
     atrMult  = distPct / atrPct
     retPct   = 100 * (close / close[length] - 1)
-    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, retPct]
+    avgDolVol = ta.sma(volume * close, length)
+    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, retPct, avgDolVol]
 
 calcReturn() =>
     100 * (close / close[length] - 1)
 
-[adr, adrPct, atr, atrPct, sma, distPct, atrMult, stockRet] = request.security(syminfo.tickerid, tf, calcStats())
+[adr, adrPct, atr, atrPct, sma, distPct, atrMult, stockRet, avgDolVol] = request.security(syminfo.tickerid, tf, calcStats())
 benchRet = request.security(benchSym, tf, calcReturn())
 
 // Relative strength: how much the stock out/under-performed the benchmark over the lookback
@@ -79,9 +80,11 @@ benchName  = array.get(benchParts, array.size(benchParts) - 1)
 
 signColor(v) => na(v) ? textColor : v >= 0 ? posColor : negColor
 fmtNum(v, f) => na(v) ? "—" : str.tostring(v, f)
+fmtDollars(v) =>
+    na(v) ? "—" : v >= 1e9 ? "$" + str.tostring(v / 1e9, "0.00") + "B" : v >= 1e6 ? "$" + str.tostring(v / 1e6, "0.00") + "M" : v >= 1e3 ? "$" + str.tostring(v / 1e3, "0.00") + "K" : "$" + str.tostring(v, "0.00")
 fmtSigned(v, f, suffix) => na(v) ? "—" : (v >= 0 ? "+" : "") + str.tostring(v, f) + suffix
 
-var table tbl = table.new(tblPosition, 2, 11, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
+var table tbl = table.new(tblPosition, 2, 12, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
 
 addRow(row, label, value, valColor) =>
     table.cell(tbl, 0, row, label, text_color = textColor, text_size = txtSize, text_halign = text.align_left)
@@ -98,9 +101,10 @@ if barstate.islast
     addRow(2, "ATR %",              fmtNum(atrPct, "0.00") + "%", textColor)
     addRow(3, "ADR",                fmtNum(adr, format.mintick), textColor)
     addRow(4, "ATR",                fmtNum(atr, format.mintick), textColor)
-    addRow(5, smaTxt + " SMA",      fmtNum(sma, format.mintick), textColor)
-    addRow(6, "Dist from " + smaTxt + " SMA", fmtSigned(distPct, "0.00", "%"), signColor(distPct))
-    addRow(7, "ATR Multiple (" + smaTxt + " SMA)", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
-    addRow(8, syminfo.ticker + " " + lenTxt + " Return", fmtSigned(stockRet, "0.00", "%"), signColor(stockRet))
-    addRow(9, benchName + " " + lenTxt + " Return",      fmtSigned(benchRet, "0.00", "%"), signColor(benchRet))
-    addRow(10, "RS vs " + benchName, fmtSigned(rsPct, "0.00", "%") + "  (" + fmtNum(rsRatio, "0.00") + ")", signColor(rsPct))
+    addRow(5, "Avg $ Volume",       fmtDollars(avgDolVol), textColor)
+    addRow(6, smaTxt + " SMA",      fmtNum(sma, format.mintick), textColor)
+    addRow(7, "Dist from " + smaTxt + " SMA", fmtSigned(distPct, "0.00", "%"), signColor(distPct))
+    addRow(8, "ATR Multiple (" + smaTxt + " SMA)", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
+    addRow(9, syminfo.ticker + " " + lenTxt + " Return", fmtSigned(stockRet, "0.00", "%"), signColor(stockRet))
+    addRow(10, benchName + " " + lenTxt + " Return",      fmtSigned(benchRet, "0.00", "%"), signColor(benchRet))
+    addRow(11, "RS vs " + benchName, fmtSigned(rsPct, "0.00", "%") + "  (" + fmtNum(rsRatio, "0.00") + ")", signColor(rsPct))
