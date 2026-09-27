@@ -10,6 +10,10 @@ length    = input.int(14, "Lookback Length (days)", minval = 1, group = grpCalc,
 smaLength = input.int(50, "SMA Length", minval = 1, group = grpCalc,
      tooltip = "Moving average used for the ATR multiple (distance from SMA ÷ ATR%).")
 benchSym  = input.symbol("AMEX:SPY", "Relative Strength Benchmark", group = grpCalc)
+rs1mLen   = input.int(21, "RS 1 Month Length (days)", minval = 1, group = grpCalc,
+     tooltip = "Trading days used for the 1 month Relative Strength (≈21 trading days).")
+rs3mLen   = input.int(63, "RS 3 Month Length (days)", minval = 1, group = grpCalc,
+     tooltip = "Trading days used for the 3 month Relative Strength (≈63 trading days).")
 useDaily  = input.bool(true, "Always use Daily bars", group = grpCalc,
      tooltip = "When on, every value is calculated from daily bars no matter which chart timeframe you are viewing. Turn off to use the chart's timeframe instead.")
 
@@ -40,19 +44,21 @@ calcStats() =>
     sma      = ta.sma(close, smaLength)
     distPct  = 100 * (close - sma) / sma
     atrMult  = distPct / atrPct
-    retPct   = 100 * (close / close[length] - 1)
     avgDolVol = ta.sma(volume * close, length)
-    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, retPct, avgDolVol]
+    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol]
 
-calcReturn() =>
-    100 * (close / close[length] - 1)
+calcReturns() =>
+    [100 * (close / close[length] - 1), 100 * (close / close[rs1mLen] - 1), 100 * (close / close[rs3mLen] - 1)]
 
-[adr, adrPct, atr, atrPct, sma, distPct, atrMult, stockRet, avgDolVol] = request.security(syminfo.tickerid, tf, calcStats())
-benchRet = request.security(benchSym, tf, calcReturn())
+[adr, adrPct, atr, atrPct, sma, distPct, atrMult, avgDolVol] = request.security(syminfo.tickerid, tf, calcStats())
+[stockRet, stockRet1m, stockRet3m] = request.security(syminfo.tickerid, tf, calcReturns())
+[benchRet, benchRet1m, benchRet3m] = request.security(benchSym, tf, calcReturns())
 
-// Relative strength: how much the stock out/under-performed the benchmark over the lookback
-rsRatio = (1 + stockRet / 100) / (1 + benchRet / 100)
-rsPct   = 100 * (rsRatio - 1)
+// Relative strength: how much the stock out/under-performed the benchmark over each period
+rsRatioOf(stockR, benchR) => (1 + stockR / 100) / (1 + benchR / 100)
+rsRatio   = rsRatioOf(stockRet, benchRet)
+rsRatio1m = rsRatioOf(stockRet1m, benchRet1m)
+rsRatio3m = rsRatioOf(stockRet3m, benchRet3m)
 
 plot(showSma ? sma : na, "SMA", smaColor, 2)
 
@@ -84,11 +90,15 @@ fmtDollars(v) =>
     na(v) ? "—" : v >= 1e9 ? "$" + str.tostring(v / 1e9, "0.00") + "B" : v >= 1e6 ? "$" + str.tostring(v / 1e6, "0.00") + "M" : v >= 1e3 ? "$" + str.tostring(v / 1e3, "0.00") + "K" : "$" + str.tostring(v, "0.00")
 fmtSigned(v, f, suffix) => na(v) ? "—" : (v >= 0 ? "+" : "") + str.tostring(v, f) + suffix
 
-var table tbl = table.new(tblPosition, 2, 12, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
+var table tbl = table.new(tblPosition, 2, 14, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
 
 addRow(row, label, value, valColor) =>
     table.cell(tbl, 0, row, label, text_color = textColor, text_size = txtSize, text_halign = text.align_left)
     table.cell(tbl, 1, row, value, text_color = valColor, text_size = txtSize, text_halign = text.align_right)
+
+addRsRow(row, label, ratio) =>
+    pct = 100 * (ratio - 1)
+    addRow(row, label, fmtSigned(pct, "0.00", "%") + "  (" + fmtNum(ratio, "0.00") + ")", signColor(pct))
 
 if barstate.islast
     lenTxt = str.tostring(length)
@@ -107,4 +117,6 @@ if barstate.islast
     addRow(8, "ATR Multiple (" + smaTxt + " SMA)", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
     addRow(9, syminfo.ticker + " " + lenTxt + " Return", fmtSigned(stockRet, "0.00", "%"), signColor(stockRet))
     addRow(10, benchName + " " + lenTxt + " Return",      fmtSigned(benchRet, "0.00", "%"), signColor(benchRet))
-    addRow(11, "RS vs " + benchName, fmtSigned(rsPct, "0.00", "%") + "  (" + fmtNum(rsRatio, "0.00") + ")", signColor(rsPct))
+    addRsRow(11, "RS vs " + benchName + " (" + lenTxt + "D)", rsRatio)
+    addRsRow(12, "RS vs " + benchName + " (1M)", rsRatio1m)
+    addRsRow(13, "RS vs " + benchName + " (3M)", rsRatio3m)
