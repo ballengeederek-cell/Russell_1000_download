@@ -1,0 +1,106 @@
+//@version=6
+indicator("ADR / ATR / SMA Extension / RS Table", shorttitle = "ADR-ATR Table", overlay = true)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+grpCalc = "Calculation"
+length    = input.int(14, "Lookback Length (days)", minval = 1, group = grpCalc,
+     tooltip = "Number of bars used for ADR, ADR%, ATR, ATR% and Relative Strength.")
+smaLength = input.int(50, "SMA Length", minval = 1, group = grpCalc,
+     tooltip = "Moving average used for the ATR multiple (distance from SMA ÷ ATR%).")
+benchSym  = input.symbol("AMEX:SPY", "Relative Strength Benchmark", group = grpCalc)
+useDaily  = input.bool(true, "Always use Daily bars", group = grpCalc,
+     tooltip = "When on, every value is calculated from daily bars no matter which chart timeframe you are viewing. Turn off to use the chart's timeframe instead.")
+
+grpTable = "Table"
+tablePos    = input.string("Top Right", "Position", group = grpTable,
+     options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"])
+textSizeOpt = input.string("Normal", "Text Size", options = ["Tiny", "Small", "Normal", "Large"], group = grpTable)
+bgColor     = input.color(color.new(#131722, 10), "Background", group = grpTable)
+headerColor = input.color(color.new(#2a2e39, 0), "Header Background", group = grpTable)
+textColor   = input.color(color.white, "Text", group = grpTable)
+posColor    = input.color(#26a69a, "Positive", group = grpTable)
+negColor    = input.color(#ef5350, "Negative", group = grpTable)
+
+grpPlot = "Chart"
+showSma  = input.bool(true, "Plot SMA on chart", group = grpPlot)
+smaColor = input.color(color.orange, "SMA Color", group = grpPlot)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Calculations
+// ─────────────────────────────────────────────────────────────────────────────
+tf = useDaily ? "D" : timeframe.period
+
+calcStats() =>
+    adr      = ta.sma(high - low, length)
+    adrPct   = 100 * (ta.sma(high / low, length) - 1)
+    atr      = ta.atr(length)
+    atrPct   = 100 * atr / close
+    sma      = ta.sma(close, smaLength)
+    distPct  = 100 * (close - sma) / sma
+    atrMult  = distPct / atrPct
+    retPct   = 100 * (close / close[length] - 1)
+    [adr, adrPct, atr, atrPct, sma, distPct, atrMult, retPct]
+
+calcReturn() =>
+    100 * (close / close[length] - 1)
+
+[adr, adrPct, atr, atrPct, sma, distPct, atrMult, stockRet] = request.security(syminfo.tickerid, tf, calcStats())
+benchRet = request.security(benchSym, tf, calcReturn())
+
+// Relative strength: how much the stock out/under-performed the benchmark over the lookback
+rsRatio = (1 + stockRet / 100) / (1 + benchRet / 100)
+rsPct   = 100 * (rsRatio - 1)
+
+plot(showSma ? sma : na, "SMA", smaColor, 2)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Table
+// ─────────────────────────────────────────────────────────────────────────────
+tblPosition = switch tablePos
+    "Top Left"      => position.top_left
+    "Top Center"    => position.top_center
+    "Top Right"     => position.top_right
+    "Middle Left"   => position.middle_left
+    "Middle Right"  => position.middle_right
+    "Bottom Left"   => position.bottom_left
+    "Bottom Center" => position.bottom_center
+    => position.bottom_right
+
+txtSize = switch textSizeOpt
+    "Tiny"  => size.tiny
+    "Small" => size.small
+    "Large" => size.large
+    => size.normal
+
+benchParts = str.split(benchSym, ":")
+benchName  = array.get(benchParts, array.size(benchParts) - 1)
+
+signColor(v) => na(v) ? textColor : v >= 0 ? posColor : negColor
+fmtNum(v, f) => na(v) ? "—" : str.tostring(v, f)
+fmtSigned(v, f, suffix) => na(v) ? "—" : (v >= 0 ? "+" : "") + str.tostring(v, f) + suffix
+
+var table tbl = table.new(tblPosition, 2, 11, bgcolor = bgColor, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
+
+addRow(row, label, value, valColor) =>
+    table.cell(tbl, 0, row, label, text_color = textColor, text_size = txtSize, text_halign = text.align_left)
+    table.cell(tbl, 1, row, value, text_color = valColor, text_size = txtSize, text_halign = text.align_right)
+
+if barstate.islast
+    lenTxt = str.tostring(length)
+    smaTxt = str.tostring(smaLength)
+
+    table.cell(tbl, 0, 0, syminfo.ticker + "  (" + lenTxt + (useDaily ? "D" : " bars") + ")", bgcolor = headerColor, text_color = textColor, text_size = txtSize)
+    table.merge_cells(tbl, 0, 0, 1, 0)
+
+    addRow(1, "ADR %",              fmtNum(adrPct, "0.00") + "%", textColor)
+    addRow(2, "ATR %",              fmtNum(atrPct, "0.00") + "%", textColor)
+    addRow(3, "ADR",                fmtNum(adr, format.mintick), textColor)
+    addRow(4, "ATR",                fmtNum(atr, format.mintick), textColor)
+    addRow(5, smaTxt + " SMA",      fmtNum(sma, format.mintick), textColor)
+    addRow(6, "Dist from " + smaTxt + " SMA", fmtSigned(distPct, "0.00", "%"), signColor(distPct))
+    addRow(7, "ATR Multiple (" + smaTxt + " SMA)", fmtSigned(atrMult, "0.00", "x"), signColor(atrMult))
+    addRow(8, syminfo.ticker + " " + lenTxt + " Return", fmtSigned(stockRet, "0.00", "%"), signColor(stockRet))
+    addRow(9, benchName + " " + lenTxt + " Return",      fmtSigned(benchRet, "0.00", "%"), signColor(benchRet))
+    addRow(10, "RS vs " + benchName, fmtSigned(rsPct, "0.00", "%") + "  (" + fmtNum(rsRatio, "0.00") + ")", signColor(rsPct))
