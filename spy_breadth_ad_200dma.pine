@@ -1,0 +1,60 @@
+//@version=6
+indicator("SPY Breadth: A/D Line vs 200-Day MA", shorttitle = "Breadth 200", overlay = false, format = format.volume)
+
+// ── Inputs ────────────────────────────────────────────────────────────────
+mode     = input.string("Advance/Decline Line", "Breadth series",
+     options = ["Advance/Decline Line", "% of S&P 500 above 200-DMA"])
+advSym   = input.symbol("USI:ADVN.NY", "Advancing issues", group = "A/D Line")
+decSym   = input.symbol("USI:DECL.NY", "Declining issues", group = "A/D Line")
+pctSym   = input.symbol("INDEX:S5TH", "% above 200-DMA symbol", group = "% Above 200-DMA")
+maLen    = input.int(200, "MA length (daily bars)", minval = 1, group = "Moving Average")
+maType   = input.string("SMA", "MA type", options = ["SMA", "EMA"], group = "Moving Average")
+showMa   = input.bool(true, "Show MA", group = "Moving Average")
+showBg   = input.bool(true, "Shade background on MA crosses", group = "Display")
+bullCol  = input.color(color.new(#26a69a, 0), "Above MA", group = "Display")
+bearCol  = input.color(color.new(#ef5350, 0), "Below MA", group = "Display")
+
+isAD = mode == "Advance/Decline Line"
+
+// Computed on the daily timeframe so the MA is always 200 *days*,
+// regardless of the chart's timeframe.
+f_breadth(bool cumulate) =>
+    running = ta.cum(nz(close))
+    src     = cumulate ? running : close
+    sma     = ta.sma(src, maLen)
+    ema     = ta.ema(src, maLen)
+    [src, maType == "SMA" ? sma : ema]
+
+// Spread ticker "ADV-DECL" gives net advances per day; cumulating it builds the A/D line.
+[adLine, adMa]   = request.security(advSym + "-" + decSym, "D", f_breadth(true))
+[pctVal, pctMa]  = request.security(pctSym, "D", f_breadth(false))
+
+value = isAD ? adLine : pctVal
+ma    = isAD ? adMa   : pctMa
+above = value > ma
+
+// ── Plots ─────────────────────────────────────────────────────────────────
+pVal = plot(value, "Breadth", color = above ? bullCol : bearCol, linewidth = 2)
+pMa  = plot(showMa ? ma : na, "MA", color = color.new(color.orange, 0), linewidth = 1)
+fill(pVal, pMa, color = above ? color.new(bullCol, 85) : color.new(bearCol, 85), title = "Fill")
+
+hline(isAD ? na : 50, "50%", color = color.gray, linestyle = hline.style_dashed)
+hline(isAD ? na : 80, "80%", color = color.new(color.gray, 60), linestyle = hline.style_dotted)
+hline(isAD ? na : 20, "20%", color = color.new(color.gray, 60), linestyle = hline.style_dotted)
+
+crossUp = ta.crossover(value, ma)
+crossDn = ta.crossunder(value, ma)
+bgcolor(showBg and crossUp ? color.new(bullCol, 75) : showBg and crossDn ? color.new(bearCol, 75) : na, title = "Cross shading")
+
+// ── Status table ──────────────────────────────────────────────────────────
+var table tbl = table.new(position.top_right, 1, 2, border_width = 1)
+if barstate.islast
+    dist = ma != 0 ? (value - ma) / math.abs(ma) * 100 : na
+    table.cell(tbl, 0, 0, (isAD ? "A/D Line" : "% > 200-DMA") + (above ? " ABOVE " : " BELOW ") + str.tostring(maLen) + "D " + maType,
+         bgcolor = above ? bullCol : bearCol, text_color = color.white, text_size = size.small)
+    table.cell(tbl, 0, 1, "Distance: " + str.tostring(dist, "#.##") + "%",
+         bgcolor = color.new(color.gray, 70), text_color = chart.fg_color, text_size = size.small)
+
+// ── Alerts ────────────────────────────────────────────────────────────────
+alertcondition(crossUp, "Breadth crossed above MA", "Breadth crossed ABOVE its moving average")
+alertcondition(crossDn, "Breadth crossed below MA", "Breadth crossed BELOW its moving average")
