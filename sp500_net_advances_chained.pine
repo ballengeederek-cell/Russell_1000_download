@@ -1,0 +1,109 @@
+//@version=6
+// S&P 500 net advances with a 200-day moving average, built from the 503 index members.
+// TradingView lets one script request about 40 symbols, so add this indicator
+// several times and chain them together (setup steps are in the tooltips):
+//   copy 1 -> chunk 1, copy 2 -> chunk 2 with "Previous chunk" = copy 1's
+//   "Running total", ... and tick "Last chunk" on the final copy.
+// With 40 per copy you need 13 copies; with 64 (Ultimate plan) you need 8.
+indicator("S&P 500 Net Advances (chained)", shorttitle = "SPX Net A/D", overlay = false)
+
+chunkSize = input.int(40, "Tickers per copy", minval = 1, maxval = 64,
+     tooltip = "40 fits every plan; Ultimate allows 64. Use the same value on every copy.")
+chunkNo   = input.int(1, "Chunk #", minval = 1, tooltip = "1 on the first copy, 2 on the second, and so on.")
+prevSrc   = input.source(close, "Previous chunk",
+     tooltip = "Chunk 1: ignored. Every other copy: pick 'Running total' from the copy with the chunk # one lower.")
+isLast    = input.bool(false, "Last chunk (show results)", tooltip = "Tick this on the copy with the highest chunk #.")
+maLen     = input.int(200, "MA length (days)", minval = 1)
+showDown  = input.bool(true, "List this chunk's down stocks")
+bullCol   = input.color(#26a69a, "Up color")
+bearCol   = input.color(#ef5350, "Down color")
+maCol     = input.color(color.orange, "MA color")
+
+var T = array.new<string>()
+if barstate.isfirst
+    T.concat(array.from("MMM", "AOS", "ABT", "ABBV", "ACN", "ADBE", "AMD", "AES", "AFL", "A", "APD", "ABNB", "AKAM", "ALB", "ARE", "ALGN", "ALLE", "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AMCR", "AEE"))
+    T.concat(array.from("AEP", "AXP", "AIG", "AMT", "AWK", "AMP", "AME", "AMGN", "APH", "ADI", "AON", "APA", "APO", "AAPL", "AMAT", "APP", "APTV", "ACGL", "ADM", "ARES", "ANET", "AJG", "AIZ", "T", "ATO"))
+    T.concat(array.from("ADSK", "ADP", "AZO", "AVY", "AXON", "BKR", "BALL", "BAC", "BAX", "BDX", "BRK.B", "BBY", "TECH", "BIIB", "BLK", "BX", "XYZ", "BE", "BNY", "BA", "BKNG", "BSX", "BMY", "AVGO", "BR"))
+    T.concat(array.from("BRO", "BF.B", "BG", "BXP", "CHRW", "CDNS", "CPT", "COF", "CAH", "CCL", "CARR", "CVNA", "CASY", "CAT", "CBOE", "CBRE", "CDW", "COR", "CNC", "CNP", "CF", "CRL", "SCHW", "CHTR", "CVX"))
+    T.concat(array.from("CMG", "CB", "CHD", "CIEN", "CI", "CINF", "CTAS", "CSCO", "C", "CFG", "CLX", "CME", "CMS", "KO", "CTSH", "COHR", "COIN", "CL", "CMCSA", "FIX", "COP", "ED", "STZ", "CEG", "COO"))
+    T.concat(array.from("CPRT", "GLW", "CPAY", "CTVA", "CSGP", "COST", "CRH", "CRWD", "CCI", "CSX", "CMI", "CVS", "DHR", "DRI", "DDOG", "DVA", "DECK", "DE", "DELL", "DAL", "DVN", "DXCM", "FANG", "DLR", "DG"))
+    T.concat(array.from("DLTR", "D", "DPZ", "DASH", "DOV", "DOW", "DHI", "DTE", "DUK", "DD", "ETN", "EBAY", "ECHO", "ECL", "EIX", "EW", "ELV", "EME", "EMR", "ETR", "EOG", "EQT", "EFX", "EQIX", "ERIE"))
+    T.concat(array.from("ESS", "EL", "EG", "EVRG", "P", "ES", "EXC", "EXE", "EXPE", "EXPD", "EXR", "XOM", "FFIV", "FDS", "FICO", "FAST", "FRT", "FDX", "FDXF", "FERG", "FIS", "FITB", "FSLR", "FE", "FISV"))
+    T.concat(array.from("FLEX", "F", "FTNT", "FTV", "FOXA", "FOX", "BEN", "FCX", "GRMN", "IT", "GE", "GEHC", "GEV", "GEN", "GNRC", "GD", "GIS", "GM", "GPC", "GILD", "GPN", "GL", "GDDY", "GS", "HAL"))
+    T.concat(array.from("HIG", "HAS", "HCA", "DOC", "HSIC", "HSY", "HPE", "HLT", "HD", "HONA", "HON", "HRL", "HST", "HWM", "HPQ", "HUBB", "HUM", "HBAN", "HII", "IBM", "IEX", "IDXX", "ITW", "ILMN", "INCY"))
+    T.concat(array.from("IR", "PODD", "INTC", "IBKR", "ICE", "IFF", "IP", "INTU", "ISRG", "IVZ", "INVH", "IQV", "IRM", "JBHT", "JBL", "JKHY", "J", "JNJ", "JCI", "JPM", "KVUE", "KDP", "KEY", "KEYS", "KMB"))
+    T.concat(array.from("KIM", "KMI", "KKR", "KLAC", "KHC", "KR", "LHX", "LH", "LRCX", "LVS", "LDOS", "LEN", "LII", "LLY", "LIN", "LYV", "LMT", "L", "LOW", "LULU", "LITE", "LYB", "MTB", "MPC", "MAR"))
+    T.concat(array.from("MRSH", "MLM", "MRVL", "MAS", "MA", "MKC", "MCD", "MCK", "MDT", "MRK", "META", "MET", "MTD", "MGM", "MCHP", "MU", "MSFT", "MAA", "MRNA", "MDLZ", "MPWR", "MNST", "MCO", "MS", "MOS"))
+    T.concat(array.from("MSI", "MSCI", "NDAQ", "NTAP", "NFLX", "NEM", "NWSA", "NWS", "NEE", "NKE", "NI", "NDSN", "NSC", "NTRS", "NOC", "NCLH", "NRG", "NUE", "NVDA", "NVR", "NXPI", "ORLY", "OXY", "ODFL", "OMC"))
+    T.concat(array.from("ON", "OKE", "ORCL", "OTIS", "PCAR", "PKG", "PLTR", "PANW", "PSKY", "PH", "PAYX", "PYPL", "PNR", "PEP", "PFE", "PCG", "PM", "PSX", "PNW", "PNC", "PPG", "PPL", "PFG", "PG", "PGR"))
+    T.concat(array.from("PLD", "PRU", "PEG", "PTC", "PSA", "PHM", "PWR", "QCOM", "DGX", "Q", "RL", "RJF", "RDDT", "RTX", "O", "REG", "REGN", "RF", "RSG", "RMD", "RVTY", "HOOD", "ROK", "ROL", "ROP"))
+    T.concat(array.from("ROST", "RCL", "SPGI", "CRM", "SNDK", "SBAC", "SLB", "STX", "SRE", "NOW", "SHW", "SPG", "SWKS", "SJM", "SW", "SNA", "SOLV", "SO", "LUV", "SWK", "SBUX", "STT", "STLD", "STE", "SYK"))
+    T.concat(array.from("SMCI", "SYF", "SNPS", "SYY", "TMUS", "TROW", "TTWO", "TPR", "TRGP", "TGT", "TEL", "TDY", "TER", "TSLA", "TXN", "TPL", "TXT", "TMO", "TJX", "TKO", "TSCO", "TT", "TDG", "TRV", "TRMB"))
+    T.concat(array.from("TFC", "TYL", "TSN", "USB", "UBER", "UDR", "ULTA", "UNP", "UAL", "UPS", "URI", "UNH", "UHS", "VLO", "VEEV", "VTR", "VLTO", "VRSN", "VRSK", "VZ", "VRTX", "VRT", "VTRS", "VICI", "V"))
+    T.concat(array.from("VST", "VMRK", "VMC", "WRB", "GWW", "WAB", "WMT", "DIS", "WBD", "WM", "WAT", "WEC", "WFC", "WELL", "WST", "WDC", "WY", "WSM", "WMB", "WTW", "WDAY", "WYNN", "XEL", "XYL", "YUM"))
+    T.concat(array.from("ZBRA", "ZBH", "ZTS"))
+
+nChunks  = int(math.ceil(T.size() / float(chunkSize)))
+startIdx = (chunkNo - 1) * chunkSize
+endIdx   = math.min(startIdx + chunkSize, T.size()) - 1
+
+// Count this chunk's stocks that closed up / down vs. their previous close
+up = 0
+dn = 0
+downList = ""
+if startIdx <= endIdx
+    for i = startIdx to endIdx
+        sym = T.get(i)
+        [c, pc] = request.security(sym, "D", [close, close[1]], gaps = barmerge.gaps_on, ignore_invalid_symbol = true)
+        if not na(c) and not na(pc)
+            if c > pc
+                up += 1
+            else if c < pc
+                downList += (dn > 0 and dn % 8 == 0 ? "\n" : dn > 0 ? " " : "") + sym
+                dn += 1
+
+// Add the totals passed from the previous copy (encoded as up * 1000 + down)
+prev   = chunkNo == 1 ? 0.0 : nz(prevSrc)
+prevUp = math.floor(prev / 1000)
+prevDn = prev - prevUp * 1000
+totUp  = prevUp + up
+totDn  = prevDn + dn
+plot(totUp * 1000 + totDn, "Running total", display = display.data_window)
+
+// Results (last chunk only)
+net = totUp - totDn
+ma  = ta.sma(net, maLen)
+plot(isLast ? net : na, "Net advances", style = plot.style_columns,
+     color = net >= 0 ? color.new(bullCol, 40) : color.new(bearCol, 40))
+plot(isLast ? ma : na, "MA of net", color = maCol, linewidth = 2)
+hline(isLast ? 0 : na, "Zero", color = color.gray, linestyle = hline.style_dashed)
+plot(isLast ? totUp : na, "Advancers", display = display.data_window)
+plot(isLast ? totDn : na, "Decliners", display = display.data_window)
+
+var table tbl = table.new(position.top_right, 2, 6, border_width = 1)
+if barstate.islast
+    txt = chart.fg_color
+    table.cell(tbl, 0, 0, "Chunk " + str.tostring(chunkNo) + " of " + str.tostring(nChunks), text_color = txt, text_size = size.small)
+    table.cell(tbl, 1, 0, "up " + str.tostring(up) + " / down " + str.tostring(dn), text_color = txt, text_size = size.small)
+    if isLast
+        table.cell(tbl, 0, 1, "S&P 500 up / down", text_color = txt, text_size = size.small)
+        table.cell(tbl, 1, 1, str.tostring(totUp) + " / " + str.tostring(totDn), text_color = txt, text_size = size.small)
+        table.cell(tbl, 0, 2, "Net", text_color = txt, text_size = size.small)
+        table.cell(tbl, 1, 2, str.tostring(net), text_color = net >= 0 ? bullCol : bearCol, text_size = size.small)
+        table.cell(tbl, 0, 3, str.tostring(maLen) + "D MA", text_color = txt, text_size = size.small)
+        table.cell(tbl, 1, 3, str.tostring(ma, "#.##"), text_color = ma >= 0 ? bullCol : bearCol, text_size = size.small)
+    if showDown and dn > 0
+        table.cell(tbl, 0, 4, "Down (this chunk)", text_color = txt, text_size = size.small)
+        table.cell(tbl, 1, 4, downList, text_color = bearCol, text_size = size.tiny, text_halign = text.align_left)
+    if chunkNo > nChunks
+        table.cell(tbl, 0, 5, "Chunk # too high", text_color = bearCol, text_size = size.small)
+        table.cell(tbl, 1, 5, "max is " + str.tostring(nChunks), text_color = bearCol, text_size = size.small)
+    else if isLast and chunkNo != nChunks
+        table.cell(tbl, 0, 5, "Missing chunks", text_color = bearCol, text_size = size.small)
+        table.cell(tbl, 1, 5, "last should be " + str.tostring(nChunks), text_color = bearCol, text_size = size.small)
+    if not timeframe.isdaily
+        table.cell(tbl, 0, 5, "Use a 1D chart", text_color = bearCol, text_size = size.small)
+        table.cell(tbl, 1, 5, "", text_color = bearCol, text_size = size.small)
+
+alertcondition(isLast and ta.crossover(net, ma), "Net crossed above MA", "S&P 500 net advances crossed above the MA")
+alertcondition(isLast and ta.crossunder(net, ma), "Net crossed below MA", "S&P 500 net advances crossed below the MA")
